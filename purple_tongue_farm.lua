@@ -43,7 +43,7 @@ local TIME_PER_SPOT_SEC     = 900         -- 15 分
 --   aetheryte : Lifestream に渡すエーテライト名（日本語名可）
 --   x,y,z     : ワールド座標
 --   fly       : 飛行で移動するか
-FISHING_SPOTS = {
+local FISHING_SPOTS = {
     { name = "ポイント1", aetheryte = "フィーストファイアズ",
       x =   6.215, y =  25.185, z =  24.578, fly = true },
     { name = "ポイント2", aetheryte = "フィーストファイアズ",
