@@ -24,11 +24,11 @@ FFXIV SomethingNeedDoing (SND) 用の Lua 自動化スクリプト集。
    - `SAND_ITEM_ID = 46246`（紫電の霊砂）GarlandTools 確認済み
    - `BAIT_ITEM_ID`（使用する餌の ItemId）  **要設定**
    - `AUTOHOOK_PRESET`（AutoHook に事前登録したプリセット名）  **要設定**
-   - `FISHING_SPOTS` の `aetheryte` が正しいか確認（既定: エレクトープ発電所）
+   - `FISHING_SPOTS` の `aetheryte` が正しいか確認（既定: 朋友の灯火）
    - `TIME_PER_SPOT_SEC`（1 箇所の滞在秒数、既定 900 = 15 分）
    - `TARGET_SAND_COUNT`（紫電の霊砂の目標数、既定 99）
 
-**登録済み座標 (Heritage Found / クル・シャゲ想定)**
+**登録済み座標 (朋友の灯火 / 紫の舌先の漁場)**
 | # | X | Y | Z |
 |---|---|---|---|
 | 1 |   6.215 | 25.185 |  24.578 |

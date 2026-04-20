@@ -44,11 +44,11 @@ local TIME_PER_SPOT_SEC     = 900         -- 15 分
 --   x,y,z     : ワールド座標
 --   fly       : 飛行で移動するか
 local FISHING_SPOTS = {
-    { name = "ポイント1", aetheryte = "エレクトープ発電所",
+    { name = "ポイント1", aetheryte = "朋友の灯火",
       x =   6.215, y =  25.185, z =  24.578, fly = true },
-    { name = "ポイント2", aetheryte = "エレクトープ発電所",
+    { name = "ポイント2", aetheryte = "朋友の灯火",
       x = -24.975, y =  21.487, z = -58.947, fly = true },
-    { name = "ポイント3", aetheryte = "エレクトープ発電所",
+    { name = "ポイント3", aetheryte = "朋友の灯火",
       x = 158.372, y =  24.070, z = -17.322, fly = true },
 }
 
