@@ -1,0 +1,24 @@
+#!/bin/sh
+# Auto-inject current commit SHA and timestamp into purple_tongue_farm.lua
+# before the commit is created, so the log first line shows the exact build.
+
+set -eu
+
+FILE="purple_tongue_farm.lua"
+[ -f "$FILE" ] || exit 0
+
+# Use the to-be-committed parent's next SHA? We don't know the new SHA yet,
+# so use HEAD's short SHA (which will become the PARENT of this commit).
+# Good enough to identify "which version is running".
+SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "uncommitted")
+DATE=$(date +"%Y-%m-%d %H:%M")
+
+# Replace SCRIPT_VERSION / SCRIPT_BUILD lines
+sed -i.bak \
+    -e "s|^local SCRIPT_VERSION = \".*\"\( *\)-- AUTO-UPDATED BY HOOK|local SCRIPT_VERSION = \"${SHA}\"\1-- AUTO-UPDATED BY HOOK|" \
+    -e "s|^local SCRIPT_BUILD   = \".*\"\( *\)-- AUTO-UPDATED BY HOOK|local SCRIPT_BUILD   = \"${DATE}\"\1-- AUTO-UPDATED BY HOOK|" \
+    "$FILE"
+rm -f "${FILE}.bak"
+
+# Restage the updated file
+git add "$FILE"

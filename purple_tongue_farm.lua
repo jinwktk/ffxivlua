@@ -121,6 +121,12 @@ configs:
 ]==]
 
 ------------------------------------------------------------------
+-- バージョン識別（git pre-commit hook で自動置換される） ----------
+------------------------------------------------------------------
+local SCRIPT_VERSION = "cfb0bc4"          -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 17:45" -- AUTO-UPDATED BY HOOK
+
+------------------------------------------------------------------
 -- 固定 ItemId (ゲーム側で変わらないため Config 化しない) ----------
 ------------------------------------------------------------------
 local FISH_ITEM_ID = 46249  -- 紫の舌先 (収集品)
@@ -186,7 +192,9 @@ local function _open_log()
     local ok, f = pcall(io.open, LOG_FILE_PATH, "a")
     if ok and f then
         _log_file = f
-        _log_file:write(string.format("==== session start %s ====\n", os.date("%Y-%m-%d %H:%M:%S")))
+        _log_file:write(string.format(
+            "==== session start %s | ver=%s build=%s ====\n",
+            os.date("%Y-%m-%d %H:%M:%S"), SCRIPT_VERSION, SCRIPT_BUILD))
         _log_file:flush()
         return true
     end
@@ -617,6 +625,8 @@ local function dump_api_availability()
 end
 
 local function main()
+    log(string.format("=== purple_tongue_farm ver=%s build=%s ===",
+        SCRIPT_VERSION, SCRIPT_BUILD))
     dump_api_availability()
     local px, py, pz = player_pos()
     log(string.format("現在位置 pos=(%s,%s,%s) zoneId=%s",

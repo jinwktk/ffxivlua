@@ -47,6 +47,21 @@ FFXIV SomethingNeedDoing (SND) 用の Lua 自動化スクリプト集。
 | 2 | -24.975 | 21.487 | -58.947 |
 | 3 | 158.372 | 24.070 | -17.322 |
 
+## バージョン識別
+
+`ptf.log` の先頭行と起動時の `/echo` に **コミットSHA + ビルド日時** が出力されます：
+```
+==== session start 2026-04-20 17:45:12 | ver=cfb0bc4 build=2026-04-20 17:39 ====
+[PTF] === purple_tongue_farm ver=cfb0bc4 build=2026-04-20 17:39 ===
+```
+SND 側のキャッシュに気付かず古い版を回してしまう事故を防ぐため。
+
+### hook セットアップ (クローン直後に1回)
+```
+git config core.hooksPath .githooks
+```
+以降、commit のたびに `purple_tongue_farm.lua` の `SCRIPT_VERSION` / `SCRIPT_BUILD` が自動で更新されます。
+
 ## 参考
 
 - https://github.com/Jaksuhn/SomethingNeedDoing
