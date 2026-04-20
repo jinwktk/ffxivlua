@@ -45,39 +45,39 @@ configs:
     type: string
     required: true
   spot1_x:
-    default: 6.215
+    default: 202.19057
     type: float
     required: true
   spot1_y:
-    default: 25.185
+    default: 128.03957
     type: float
     required: true
   spot1_z:
-    default: 24.578
+    default: -13.55115
     type: float
     required: true
   spot2_x:
-    default: -24.975
+    default: 156.48239
     type: float
     required: true
   spot2_y:
-    default: 21.487
+    default: 118.766556
     type: float
     required: true
   spot2_z:
-    default: -58.947
+    default: 67.60431
     type: float
     required: true
   spot3_x:
-    default: 158.372
+    default: 47.8799
     type: float
     required: true
   spot3_y:
-    default: 24.070
+    default: 118.18503
     type: float
     required: true
   spot3_z:
-    default: -17.322
+    default: 91.6896
     type: float
     required: true
   use_flight:
@@ -110,8 +110,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "335fa28"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 18:15"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "1ce4440"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:20"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -136,17 +136,17 @@ local opts = {
     debug               = cfg("debug", true),
     spots = {
         { name = "ポイント1",
-          x = cfg("spot1_x",   6.215),
-          y = cfg("spot1_y",  25.185),
-          z = cfg("spot1_z",  24.578) },
+          x = cfg("spot1_x", 202.19057),
+          y = cfg("spot1_y", 128.03957),
+          z = cfg("spot1_z", -13.55115) },
         { name = "ポイント2",
-          x = cfg("spot2_x", -24.975),
-          y = cfg("spot2_y",  21.487),
-          z = cfg("spot2_z", -58.947) },
+          x = cfg("spot2_x", 156.48239),
+          y = cfg("spot2_y", 118.766556),
+          z = cfg("spot2_z",  67.60431) },
         { name = "ポイント3",
-          x = cfg("spot3_x", 158.372),
-          y = cfg("spot3_y",  24.070),
-          z = cfg("spot3_z", -17.322) },
+          x = cfg("spot3_x",  47.8799),
+          y = cfg("spot3_y", 118.18503),
+          z = cfg("spot3_z",  91.6896) },
     },
 }
 
