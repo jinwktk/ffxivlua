@@ -30,11 +30,9 @@ configs:
     max: 30
     required: true
   bait_item_id:
-    default: 29717
-    description: 使用する餌の ItemId (ゲーム内でアイテムを右クリック→マクロにコピーで確認)
-    type: int
-    min: 1
-    max: 999999
+    default: "29717"
+    description: 使用する餌 (AutoHook /bait の引数。ItemId または餌名 例 "ラグワーム")
+    type: string
     required: true
   autohook_preset:
     default: 紫の舌先
@@ -142,7 +140,7 @@ end
 local TARGET_SAND_COUNT    = cfg("target_sand_count", 99)
 local TIME_PER_SPOT_SEC    = cfg("time_per_spot_sec", 900)
 local INVENTORY_FREE_LIMIT = cfg("inventory_free_limit", 1)
-local BAIT_ITEM_ID         = cfg("bait_item_id", 29717)
+local BAIT_ITEM_ID         = cfg("bait_item_id", "29717")
 local AUTOHOOK_PRESET      = cfg("autohook_preset", "紫の舌先")
 local AETHERYTE_NAME       = cfg("aetheryte_name", "朋友の灯火")
 local USE_FLIGHT           = cfg("use_flight", true)
@@ -514,16 +512,9 @@ end
 
 local function setup_rig()
     log("setup_rig 開始")
-    log("  餌セット itemId=" .. tostring(BAIT_ITEM_ID))
-    -- SND では /item は非対応のことが多いので Inventory.UseItem を試す
-    local use_item = safe_get("Inventory.UseItem")
-    if use_item then
-        local ok, err = pcall(use_item, BAIT_ITEM_ID)
-        log("  Inventory.UseItem ok=" .. tostring(ok) .. " err=" .. tostring(err))
-    else
-        log("  Inventory.UseItem なし、/item コマンドで試行")
-        yield('/item ' .. tostring(BAIT_ITEM_ID))
-    end
+    -- AutoHook /bait コマンドで餌セット
+    log("  /bait " .. tostring(BAIT_ITEM_ID))
+    yield('/bait ' .. tostring(BAIT_ITEM_ID))
     wait(1.5)
     log("  AutoHook プリセット=" .. AUTOHOOK_PRESET)
     yield('/ahset "' .. AUTOHOOK_PRESET .. '"')
