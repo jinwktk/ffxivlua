@@ -517,7 +517,7 @@ local function setup_rig()
     yield('/bait ' .. tostring(BAIT_ITEM_ID))
     wait(1.5)
     log("  AutoHook プリセット=" .. AUTOHOOK_PRESET)
-    yield('/ahset "' .. AUTOHOOK_PRESET .. '"')
+    yield('/ahpreset "' .. AUTOHOOK_PRESET .. '"')
     yield("/ahon")
     wait(1)
     if NEEDS_COLLECTABLE then
