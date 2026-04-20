@@ -210,25 +210,47 @@ local function wait(sec)
     yield("/wait " .. tostring(sec))
 end
 
--- SND Expanded Edition は Svc / Inventory / IPC 名前空間 API
+-- SND Expanded Edition は Svc (userdata) / Inventory / IPC などの名前空間
+-- userdata への field アクセスは pcall + . 構文でやる必要がある
 local function safe_get(path)
-    -- "Svc.Condition" 等をドットで辿って取得
     local obj = _G
+    local first = true
     for seg in string.gmatch(path, "[^.]+") do
-        if type(obj) ~= "table" then return nil end
-        obj = rawget(obj, seg)
         if obj == nil then return nil end
+        local t = type(obj)
+        if first and t == "table" then
+            obj = rawget(obj, seg)
+        elseif t == "table" then
+            obj = rawget(obj, seg)
+        elseif t == "userdata" or t == "table" then
+            local ok, v = pcall(function() return obj[seg] end)
+            obj = ok and v or nil
+        else
+            -- 関数やプリミティブは辿れない
+            local ok, v = pcall(function() return obj[seg] end)
+            obj = ok and v or nil
+        end
+        first = false
     end
     return obj
 end
 
+-- userdata の index を pcall でアクセス
+local function safe_index(obj, key)
+    if obj == nil then return nil end
+    local ok, v = pcall(function() return obj[key] end)
+    if ok then return v end
+    return nil
+end
+
 local function cond(id)
-    local tbl = safe_get("Svc.Condition")
-    if tbl then
-        local ok, v = pcall(function() return tbl[id] end)
-        if ok then return v == true end
-    end
-    return false
+    -- Svc は userdata 前提。.Condition 経由でインデクサに渡す
+    local svc = rawget(_G, "Svc")
+    if svc == nil then return false end
+    local c = safe_index(svc, "Condition")
+    if c == nil then return false end
+    local v = safe_index(c, id)
+    return v == true
 end
 
 local function item_count(id)
@@ -264,7 +286,14 @@ end
 ------------------------------------------------------------------
 
 local function player_obj()
-    return safe_get("Svc.ClientState.LocalPlayer")
+    local svc = rawget(_G, "Svc")
+    local cs = safe_index(svc, "ClientState")
+    return safe_index(cs, "LocalPlayer")
+end
+
+local function client_state()
+    local svc = rawget(_G, "Svc")
+    return safe_index(svc, "ClientState")
 end
 
 local function player_ready()
@@ -298,7 +327,9 @@ local function pathfind_in_progress()
 end
 
 local function zone_id()
-    local v = safe_get("Svc.ClientState.TerritoryType")
+    local cs = client_state()
+    if cs == nil then return nil end
+    local v = safe_index(cs, "TerritoryType")
     if v ~= nil then return tonumber(v) end
     return nil
 end
@@ -306,12 +337,14 @@ end
 local function player_pos()
     local p = player_obj()
     if not p then return nil, nil, nil end
-    local ok, pos = pcall(function() return p.Position end)
-    if not ok or not pos then return nil, nil, nil end
-    local okx, x = pcall(function() return pos.X end)
-    local oky, y = pcall(function() return pos.Y end)
-    local okz, z = pcall(function() return pos.Z end)
-    if okx and oky and okz then return x, y, z end
+    local pos = safe_index(p, "Position")
+    if not pos then return nil, nil, nil end
+    local x = safe_index(pos, "X")
+    local y = safe_index(pos, "Y")
+    local z = safe_index(pos, "Z")
+    if x ~= nil and y ~= nil and z ~= nil then
+        return x, y, z
+    end
     return nil, nil, nil
 end
 
@@ -384,16 +417,37 @@ local function teleport_to(aetheryte)
 end
 
 local function mount_up()
-    if cond(COND.mounted) then return end
-    -- /gaction よりも /mount コマンドの方が確実 (vac_functions 参考)
-    yield('/mount "Company Chocobo"')
-    wait_until(function() return cond(COND.mounted) end, 5)
+    if cond(COND.mounted) then
+        log("既にマウント中")
+        return
+    end
+    log("マウント開始")
+    -- 優先: Actions.ExecuteGeneralAction(9) = マウントルーレット
+    local fn = safe_get("Actions.ExecuteGeneralAction")
+    if fn then
+        pcall(fn, 9)
+    else
+        yield('/gaction "マウントルーレット"')
+    end
+    local ok = wait_until(function() return cond(COND.mounted) end, 8)
+    if not ok then
+        log("  マウント失敗、/mount フォールバック")
+        yield('/mount "Company Chocobo"')
+        wait_until(function() return cond(COND.mounted) end, 5)
+    end
     wait(1)
+    log("  マウント完了: " .. tostring(cond(COND.mounted)))
 end
 
 local function dismount()
     if not cond(COND.mounted) then return end
-    yield('/gaction "マウント解除"')
+    log("マウント解除")
+    local fn = safe_get("Actions.ExecuteGeneralAction")
+    if fn then
+        pcall(fn, 23)  -- マウント解除
+    else
+        yield('/gaction "マウント解除"')
+    end
     wait_until(function() return not cond(COND.mounted) end, 5)
 end
 
