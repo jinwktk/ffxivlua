@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "8e7d35a"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:50"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "c408a62"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:53"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -476,18 +476,73 @@ local function reduce_all()
         log("  紫の舌先 0 → 精選スキップ")
         return
     end
+
+    -- 精選が使えるのは Fisher (Lv60+ 精選解禁後)。GA id は 18 (精選)
+    local use_item = safe_get("Inventory.UseItem")
+    local exec_ga  = safe_get("Actions.ExecuteGeneralAction")
+    log(string.format("  API check Inventory.UseItem=%s Actions.ExecuteGeneralAction=%s",
+        tostring(type(use_item)), tostring(type(exec_ga))))
+
     local safety = 0
-    while fish_count(FISH_ITEM_ID) > 0 and safety < 500 do
-        yield('/ac 精選')
-        wait(1)
-        yield('/item ' .. tostring(FISH_ITEM_ID))
-        wait(1)
+    local prev_fish = n
+    while safety < 500 do
+        local cur_fish = fish_count(FISH_ITEM_ID)
+        log(string.format("  iter=%d fish=%d sand=%d", safety, cur_fish, item_count(SAND_ITEM_ID)))
+
+        if cur_fish <= 0 then
+            log("  舌先消費完了")
+            break
+        end
+        if item_count(SAND_ITEM_ID) >= cfg.target then
+            log("  目標到達")
+            break
+        end
+
+        -- 精選アクション発動 (GA=18 or /ac 精選)
+        local opened = false
+        if exec_ga then
+            local ok = pcall(exec_ga, 18)
+            log("  Actions.ExecuteGeneralAction(18) ok=" .. tostring(ok))
+            opened = ok
+        end
+        if not opened then
+            yield('/ac 精選')
+            log("  /ac 精選 送信")
+        end
+        wait(1.5)
+
+        -- アイテム選択: Inventory.UseItem が一番確実。無ければ /item
+        local selected = false
+        if use_item then
+            local ok, err = pcall(use_item, FISH_ITEM_ID)
+            log(string.format("  UseItem(%d) ok=%s err=%s",
+                FISH_ITEM_ID, tostring(ok), tostring(err)))
+            selected = ok
+        end
+        if not selected then
+            yield('/item ' .. tostring(FISH_ITEM_ID))
+            log("  /item 送信")
+        end
+
+        -- 精選演出完了まで待機 (cast 条件が落ちる)
+        wait(2)
         wait_until(function() return not cond(COND.casting) end, 15)
         wait(0.5)
+
+        -- 前回から減っていなければ異常
+        local new_fish = fish_count(FISH_ITEM_ID)
+        if new_fish >= prev_fish then
+            log(string.format("  ※減っていない fish=%d→%d", prev_fish, new_fish))
+            if safety >= 3 then
+                log("  3回以上減少せず → 精選打ち切り")
+                break
+            end
+        end
+        prev_fish = new_fish
+
         safety = safety + 1
-        if item_count(SAND_ITEM_ID) >= cfg.target then break end
     end
-    log("精選完了 sand=" .. item_count(SAND_ITEM_ID))
+    log("精選完了 fish=" .. fish_count(FISH_ITEM_ID) .. " sand=" .. item_count(SAND_ITEM_ID))
 end
 
 ------------------------------------------------------------------
@@ -500,6 +555,7 @@ local function dump_api()
         "Svc.ClientState.TerritoryType",
         "Inventory.GetItemCount", "Inventory.GetFreeInventorySlots",
         "Inventory.GetHQItemCount", "Inventory.GetCollectableItemCount",
+        "Inventory.UseItem",
         "IPC.Lifestream.ExecuteCommand", "IPC.vnavmesh.PathfindAndMoveTo",
         "Actions.ExecuteGeneralAction", "Config.Get",
     }
