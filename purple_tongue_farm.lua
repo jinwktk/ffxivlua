@@ -299,15 +299,30 @@ end
 local function already_in_target_zone(aetheryte)
     local target = find_zone_by_aetheryte(aetheryte)
     local current = zone_id()
+    log(string.format("Zone判定: current=%s target=%s aetheryte=%s",
+        tostring(current), tostring(target), tostring(aetheryte)))
     if target and current then
-        return target == current
+        local same = (target == current)
+        log("  → zone一致: " .. tostring(same))
+        return same
     end
     -- FindZoneIDByAetheryte が使えない場合は距離で代替判定
-    local px, _, pz = player_pos()
-    if not px then return false end
-    for _, s in ipairs(FISHING_SPOTS) do
-        if dist_xz(px, pz, s.x, s.z) <= 500 then return true end
+    local px, py, pz = player_pos()
+    log(string.format("  フォールバック距離判定  pos=(%s,%s,%s)",
+        tostring(px), tostring(py), tostring(pz)))
+    if not px then
+        log("  → 位置取得失敗 false")
+        return false
     end
+    for i, s in ipairs(FISHING_SPOTS) do
+        local d = dist_xz(px, pz, s.x, s.z)
+        log(string.format("  spot%d 距離=%.1f", i, d))
+        if d <= 500 then
+            log("  → 500以内 true")
+            return true
+        end
+    end
+    log("  → 遠い false")
     return false
 end
 
@@ -492,8 +507,36 @@ end
 -- メインループ ----------------------------------------------------
 ------------------------------------------------------------------
 
+-- 起動時に利用可能な SND API をダンプする
+local function dump_api_availability()
+    log("=== SND API チェック ===")
+    local names = {
+        "GetPlayerRawXPos", "GetPlayerRawYPos", "GetPlayerRawZPos",
+        "GetZoneID", "FindZoneIDByAetheryte",
+        "GetDistanceToPoint", "GetCharacterCondition",
+        "GetItemCount", "GetInventoryFreeSlotCount",
+        "IsPlayerAvailable", "IsPlayerCasting", "IsMoving",
+        "LifestreamIsBusy", "PathIsRunning",
+    }
+    for _, n in ipairs(names) do
+        local t = type(rawget(_G, n))
+        log(string.format("  %-28s = %s", n, t))
+    end
+    local cfg_avail = (Config and type(Config.Get) == "function") and "OK" or "none"
+    log("  Config.Get                   = " .. cfg_avail)
+    log("======================")
+end
+
 local function main()
+    dump_api_availability()
+    local px, py, pz = player_pos()
+    log(string.format("現在位置 pos=(%s,%s,%s) zoneId=%s",
+        tostring(px), tostring(py), tostring(pz), tostring(zone_id())))
+    log(string.format("設定  aetheryte=%s bait=%d preset=%s target=%d time=%d",
+        AETHERYTE_NAME, BAIT_ITEM_ID, AUTOHOOK_PRESET,
+        TARGET_SAND_COUNT, TIME_PER_SPOT_SEC))
     log("開始: 目標 紫電の霊砂 " .. TARGET_SAND_COUNT .. " 個")
+
     local idx = 1
     while item_count(SAND_ITEM_ID) < TARGET_SAND_COUNT do
         goto_spot(FISHING_SPOTS[idx])
