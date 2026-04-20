@@ -186,27 +186,39 @@ local function wait(sec)
     yield("/wait " .. tostring(sec))
 end
 
-local function cond(id)
-    if Svc and Svc.Condition then
-        return Svc.Condition[id] == true
+-- SND グローバル関数ラッパー（存在しない環境への安全フォールバック）
+local function safe_call(name, ...)
+    local fn = rawget(_G, name)
+    if type(fn) == "function" then
+        local ok, ret = pcall(fn, ...)
+        if ok then return ret end
     end
-    if GetCharacterCondition then return GetCharacterCondition(id) end
+    return nil
+end
+
+local function cond(id)
+    local v = safe_call("GetCharacterCondition", id)
+    if v ~= nil then return v == true end
+    if Svc and Svc.Condition then return Svc.Condition[id] == true end
     return false
 end
 
 local function item_count(id)
+    -- vac_functions 互換: GetItemCount(id) がSND組込
+    local v = safe_call("GetItemCount", id)
+    if v ~= nil then return tonumber(v) or 0 end
     if Inventory and Inventory.GetItemCount then
         return Inventory.GetItemCount(id) or 0
     end
-    if GetItemCount then return GetItemCount(id) or 0 end
     return 0
 end
 
 local function free_slots()
+    local v = safe_call("GetInventoryFreeSlotCount")
+    if v ~= nil then return tonumber(v) or 0 end
     if Inventory and Inventory.GetFreeInventorySlots then
         return Inventory.GetFreeInventorySlots() or 0
     end
-    if GetInventoryFreeSlotCount then return GetInventoryFreeSlotCount() end
     return 35
 end
 
@@ -221,61 +233,129 @@ local function wait_until(fn, timeout_sec)
 end
 
 ------------------------------------------------------------------
--- 現在位置 / 距離判定 --------------------------------------------
+-- プレイヤー状態 / 位置 ------------------------------------------
 ------------------------------------------------------------------
 
--- プレイヤー位置を取得（Svc.ClientState 優先、無ければ legacy）
+local function player_ready()
+    local v = safe_call("IsPlayerAvailable")
+    return v == nil or v == true
+end
+
+local function player_casting()
+    local v = safe_call("IsPlayerCasting")
+    return v == true
+end
+
+local function is_moving()
+    local v = safe_call("IsMoving")
+    return v == true
+end
+
+local function path_running()
+    local v = safe_call("PathIsRunning")
+    return v == true
+end
+
+local function lifestream_busy()
+    local v = safe_call("LifestreamIsBusy")
+    return v == true
+end
+
+local function zone_id()
+    return safe_call("GetZoneID")
+end
+
+local function find_zone_by_aetheryte(name)
+    return safe_call("FindZoneIDByAetheryte", name)
+end
+
 local function player_pos()
-    if Svc and Svc.ClientState and Svc.ClientState.LocalPlayer then
-        local p = Svc.ClientState.LocalPlayer.Position
-        if p then return p.X, p.Y, p.Z end
-    end
-    if GetPlayerRawXPos then
-        local ok, x, y, z = pcall(function()
-            return GetPlayerRawXPos(), GetPlayerRawYPos(), GetPlayerRawZPos()
-        end)
-        if ok then return x, y, z end
-    end
-    return nil, nil, nil
+    local x = safe_call("GetPlayerRawXPos")
+    local y = safe_call("GetPlayerRawYPos")
+    local z = safe_call("GetPlayerRawZPos")
+    return x, y, z
+end
+
+-- SND 組込 GetDistanceToPoint があればそれを使う（XYZ 三次元）
+local function distance_to(x, y, z)
+    local v = safe_call("GetDistanceToPoint", x, y, z)
+    if v ~= nil then return tonumber(v) end
+    local px, py, pz = player_pos()
+    if not px then return nil end
+    local dx, dy, dz = px - x, (py or 0) - (y or 0), pz - z
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
 end
 
 local function dist_xz(ax, az, bx, bz)
-    local dx = ax - bx
-    local dz = az - bz
+    local dx, dz = ax - bx, az - bz
     return math.sqrt(dx * dx + dz * dz)
-end
-
--- いずれかの釣り場が近いなら「既に現地にいる」と判定
-local function near_any_spot(radius)
-    local px, _, pz = player_pos()
-    if not px then return false end
-    for _, s in ipairs(FISHING_SPOTS) do
-        if dist_xz(px, pz, s.x, s.z) <= radius then return true end
-    end
-    return false
 end
 
 ------------------------------------------------------------------
 -- 移動 ------------------------------------------------------------
 ------------------------------------------------------------------
 
+-- 既に目的ゾーンにいるか判定（vac_functions の ZoneCheck 相当）
+local function already_in_target_zone(aetheryte)
+    local target = find_zone_by_aetheryte(aetheryte)
+    local current = zone_id()
+    if target and current then
+        return target == current
+    end
+    -- FindZoneIDByAetheryte が使えない場合は距離で代替判定
+    local px, _, pz = player_pos()
+    if not px then return false end
+    for _, s in ipairs(FISHING_SPOTS) do
+        if dist_xz(px, pz, s.x, s.z) <= 500 then return true end
+    end
+    return false
+end
+
+-- Lifestream によるテレポ（vac_functions.Teleporter を簡略化）
 local function teleport_to(aetheryte)
-    -- 既に釣り場付近 (半径 400 以内) にいるならテレポ省略
-    if near_any_spot(400) then
-        log("既に現地付近にいるためテレポ省略")
+    if already_in_target_zone(aetheryte) then
+        log("既に対象ゾーン内、テレポ省略")
         return
     end
+
+    -- 準備待機
+    wait_until(function()
+        return player_ready() and not player_casting()
+            and not cond(26) and not cond(32)
+    end, 30)
+
     log("テレポ: " .. aetheryte)
-    yield('/li tp ' .. aetheryte)
-    wait(2)
-    wait_until(function() return cond(COND.betweenAreas) end, 5)
-    wait_until(function() return not cond(COND.betweenAreas) end, 40)
-    wait(3)
+    local retries, max_retries = 0, 10
+    while retries < max_retries do
+        if not player_casting() then
+            yield('/li ' .. aetheryte)
+            wait(2)
+        end
+        if lifestream_busy() then
+            -- Lifestream 処理中: 完了まで待機
+            wait_until(function()
+                return not lifestream_busy() and player_ready()
+            end, 60)
+            break
+        end
+        retries = retries + 1
+        log("Lifestream リトライ #" .. retries)
+    end
+
+    if retries >= max_retries then
+        log("Lifestream 失敗: " .. max_retries .. "回")
+        yield("/lifestream stop")
+    end
+
+    wait_until(function()
+        return player_ready() and not player_casting()
+    end, 30)
 end
 
 local function mount_up()
     if cond(COND.mounted) then return end
-    yield("/gaction マウントロット")
+    -- /gaction よりも /mount コマンドの方が確実 (vac_functions 参考)
+    yield('/mount "Company Chocobo"')
     wait_until(function() return cond(COND.mounted) end, 5)
     wait(1)
 end
@@ -286,13 +366,14 @@ local function dismount()
     wait_until(function() return not cond(COND.mounted) end, 5)
 end
 
--- 目的地に近づくまで待機（到達判定）
 local function wait_arrival(spot, timeout_sec)
     local t, step = 0, 1.0
     while t < timeout_sec do
-        local px, _, pz = player_pos()
-        if px and dist_xz(px, pz, spot.x, spot.z) <= 3.0 then
-            return true
+        local d = distance_to(spot.x, spot.y, spot.z)
+        if d and d <= 3.0 then return true end
+        if not path_running() and not is_moving() and t > 3 then
+            -- vnavmesh 停止済 かつ動いていない → 到達 or スタック
+            if d and d <= 5.0 then return true end
         end
         yield("/wait " .. step)
         t = t + step
@@ -301,16 +382,14 @@ local function wait_arrival(spot, timeout_sec)
 end
 
 local function move_to(spot)
-    -- 既に目の前 (半径 5) なら移動不要
-    local px, _, pz = player_pos()
-    if px and dist_xz(px, pz, spot.x, spot.z) <= 5.0 then
-        log("目的地に到着済")
+    local d = distance_to(spot.x, spot.y, spot.z)
+    if d and d <= 5.0 then
+        log("目的地に到着済 (d=" .. string.format("%.1f", d) .. ")")
         return
     end
 
     if USE_FLIGHT then mount_up() end
 
-    -- vnavmesh はチャットコマンド経由 (IPC より安定)
     local cmd = USE_FLIGHT and "/vnav flyto " or "/vnav moveto "
     yield(cmd .. string.format("%.2f %.2f %.2f", spot.x, spot.y, spot.z))
 
