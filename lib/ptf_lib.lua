@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "6dc506a"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:06"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "88ebd01"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:08"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -537,15 +537,34 @@ local function reduce_all()
         end
         wait(1.5)
 
-        -- PurifyItemSelector (精選ウィンドウ) で先頭アイテムを選択
-        -- /pcall PurifyItemSelector true 12 0
-        -- (true=show, 12=Reduce アクション, 0=先頭スロット)
-        yield('/pcall PurifyItemSelector true 12 0')
-        log("  /pcall PurifyItemSelector 12 0 送信")
+        -- PurifyItemSelector が表示されるのを待ってから callback
+        local ok_visible = wait_until(function()
+            local fn = safe_get("Addons.GetAddon")
+                    or safe_get("Addons.IsAddonVisible")
+                    or safe_get("IsAddonVisible")
+            if fn then
+                local ok, v = pcall(fn, "PurifyItemSelector")
+                if ok then
+                    if type(v) == "boolean" then return v end
+                    if type(v) == "table" or type(v) == "userdata" then
+                        local vis = safe_index(v, "Ready") or safe_index(v, "IsVisible")
+                        if vis ~= nil then return vis == true end
+                        return true   -- 取れたら表示されてるとみなす
+                    end
+                end
+            end
+            -- 取得不能時は条件で代替 (精選演出 = casting)
+            return false
+        end, 5)
+        log("  PurifyItemSelector visible=" .. tostring(ok_visible))
+
+        -- 表示されなくてもとりあえず callback を送ってみる
+        yield('/callback PurifyItemSelector 12 0')
+        log("  /callback PurifyItemSelector 12 0 送信")
         wait(1.5)
 
         -- 精選結果ウィンドウ PurifyResult を閉じる
-        yield('/pcall PurifyResult true 0')
+        yield('/callback PurifyResult true 0')
         wait(1)
 
         -- 精選演出完了まで待機 (cast 条件が落ちる)
