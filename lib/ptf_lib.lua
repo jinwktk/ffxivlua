@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "88ebd01"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:08"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "d558e4d"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:11"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -559,8 +559,8 @@ local function reduce_all()
         log("  PurifyItemSelector visible=" .. tostring(ok_visible))
 
         -- 表示されなくてもとりあえず callback を送ってみる
-        yield('/callback PurifyItemSelector 12 0')
-        log("  /callback PurifyItemSelector 12 0 送信")
+        yield('/callback PurifyItemSelector true 12 0')
+        log("  /callback PurifyItemSelector true 12 0 送信")
         wait(1.5)
 
         -- 精選結果ウィンドウ PurifyResult を閉じる
