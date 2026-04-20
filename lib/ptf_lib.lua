@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "81612d3"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:46"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "0f3d9dc"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:49"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -99,6 +99,7 @@ local function cond(id)
     return c and safe_index(c, id) == true
 end
 
+-- NQ の個数
 local function item_count(id)
     local fn = safe_get("Inventory.GetItemCount")
     if fn then
@@ -106,6 +107,43 @@ local function item_count(id)
         if ok then return tonumber(v) or 0 end
     end
     return 0
+end
+
+-- 収集品 (HQ / collectable) を含めた総数。紫の舌先のように
+-- 収集品で釣れる魚は GetItemCount(id) に含まれない SND 実装があるため、
+-- 代替 API も pcall で試す。
+local function fish_count(id)
+    local total = item_count(id)
+
+    -- Inventory.GetItemCount(id, includeHQ=true) を試す
+    local fn1 = safe_get("Inventory.GetItemCount")
+    if fn1 then
+        local ok, v = pcall(fn1, id, true)
+        if ok and tonumber(v) then
+            local n = tonumber(v)
+            if n > total then total = n end
+        end
+    end
+
+    -- Inventory.GetCollectableItemCount(id, quality=1) を試す
+    local fn2 = safe_get("Inventory.GetCollectableItemCount")
+    if fn2 then
+        local ok, v = pcall(fn2, id, 1)
+        if ok and tonumber(v) then
+            total = total + (tonumber(v) or 0)
+        end
+    end
+
+    -- Inventory.GetHQItemCount(id)
+    local fn3 = safe_get("Inventory.GetHQItemCount")
+    if fn3 then
+        local ok, v = pcall(fn3, id)
+        if ok and tonumber(v) then
+            total = total + (tonumber(v) or 0)
+        end
+    end
+
+    return total
 end
 
 local function free_slots()
@@ -398,7 +436,7 @@ local function fish_at_spot(duration_sec)
 
     while (os.time() - start_t) < duration_sec do
         if free_slots() <= cfg.inventory_free_limit
-           and item_count(FISH_ITEM_ID) > 0 then
+           and fish_count(FISH_ITEM_ID) > 0 then
             return "inv_full"
         end
         if item_count(SAND_ITEM_ID) >= cfg.target then return "done" end
@@ -432,14 +470,14 @@ local function stop_fishing()
 end
 
 local function reduce_all()
-    local n = item_count(FISH_ITEM_ID)
+    local n = fish_count(FISH_ITEM_ID)
     log("精選開始 fish=" .. n)
     if n <= 0 then
         log("  紫の舌先 0 → 精選スキップ")
         return
     end
     local safety = 0
-    while item_count(FISH_ITEM_ID) > 0 and safety < 500 do
+    while fish_count(FISH_ITEM_ID) > 0 and safety < 500 do
         yield('/ac 精選')
         wait(1)
         yield('/item ' .. tostring(FISH_ITEM_ID))
@@ -461,6 +499,7 @@ local function dump_api()
         "Svc", "Svc.Condition", "Svc.ClientState.LocalPlayer",
         "Svc.ClientState.TerritoryType",
         "Inventory.GetItemCount", "Inventory.GetFreeInventorySlots",
+        "Inventory.GetHQItemCount", "Inventory.GetCollectableItemCount",
         "IPC.Lifestream.ExecuteCommand", "IPC.vnavmesh.PathfindAndMoveTo",
         "Actions.ExecuteGeneralAction", "Config.Get",
     }
@@ -513,7 +552,7 @@ function PTF.run(opts)
 
         -- 釣り開始前のインベントリ空きチェック
         local free = free_slots()
-        local fish = item_count(FISH_ITEM_ID)
+        local fish = fish_count(FISH_ITEM_ID)
         log(string.format("釣り前チェック  空き=%d 舌先=%d", free, fish))
         if free <= cfg.inventory_free_limit then
             if fish > 0 then
