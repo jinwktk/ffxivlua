@@ -74,8 +74,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "8e1537b"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 18:56"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "721a71c"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:59"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
