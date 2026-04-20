@@ -74,8 +74,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "f67350f"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 18:29"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "4368c4c"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:42"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -104,6 +104,8 @@ local opts = {
         { name = "ポイント2", x = 156.48239, y = 118.766556, z =  67.60431 },
         { name = "ポイント3", x =  47.8799,  y = 118.18503,  z =  91.6896  },
     },
+    -- 共通 pointToFace (キャスト前に全スポットでこの方角へ向き直す)
+    face = { x = 83.00321, y = 121.52815, z = -50.590492 },
 }
 
 yield(string.format('/echo [PTF] main ver=%s build=%s', SCRIPT_VERSION, SCRIPT_BUILD))

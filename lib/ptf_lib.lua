@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "f67350f"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:29"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "4368c4c"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:42"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -307,10 +307,31 @@ local function move_to(spot)
     wait(1)
 end
 
+-- キャラクターを指定座標の方向に向ける (pointToFace)
+-- vnav で該当点に一瞬歩き出す → 回頭だけで停止
+local function face_point(fx, fy, fz)
+    log(string.format("face_point (%.2f, %.2f, %.2f)", fx, fy, fz))
+    -- 地上移動で回頭させる (飛行だと上昇してしまうので注意)
+    yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
+    wait(1)
+    yield("/vnav stop")
+    wait(0.5)
+end
+
 local function goto_spot(spot)
     log("→ " .. spot.name)
     teleport_to(cfg.aetheryte)
     move_to(spot)
+
+    -- スポット固有 face があればそれを優先、なければ共通 cfg.face
+    local f = spot.face or cfg.face
+    if f then face_point(f.x, f.y, f.z) end
+
+    -- キャスト前にマウントを必ず降りる
+    if cond(COND.mounted) then
+        log("キャスト前にマウント解除")
+        dismount()
+    end
 end
 
 ------------------------------------------------------------------
@@ -334,6 +355,11 @@ local function setup_rig()
 end
 
 local function cast()
+    -- マウント中だとキャストできないので強制降車
+    if cond(COND.mounted) then
+        log("キャスト前: マウント解除")
+        dismount()
+    end
     log("キャスティング")
     yield('/ac キャスティング')
     wait(2)
@@ -467,6 +493,9 @@ function PTF.run(opts)
     cfg.use_flight         = cfg.use_flight ~= false
     cfg.needs_collectable  = cfg.needs_collectable ~= false
     cfg.debug              = cfg.debug ~= false
+    -- 共通 pointToFace (すべてのスポットで同じ方角を向かせる場合)
+    -- cfg.face = {x=..., y=..., z=...} が渡されれば採用、なければ個別 spot.face のみ
+    cfg.face               = cfg.face
 
     log(string.format("=== purple_tongue_farm lib_ver=%s build=%s ===",
         LIB_VERSION, LIB_BUILD))
