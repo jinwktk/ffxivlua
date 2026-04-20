@@ -513,18 +513,32 @@ end
 ------------------------------------------------------------------
 
 local function setup_rig()
-    yield('/item ' .. tostring(BAIT_ITEM_ID))
+    log("setup_rig 開始")
+    log("  餌セット itemId=" .. tostring(BAIT_ITEM_ID))
+    -- SND では /item は非対応のことが多いので Inventory.UseItem を試す
+    local use_item = safe_get("Inventory.UseItem")
+    if use_item then
+        local ok, err = pcall(use_item, BAIT_ITEM_ID)
+        log("  Inventory.UseItem ok=" .. tostring(ok) .. " err=" .. tostring(err))
+    else
+        log("  Inventory.UseItem なし、/item コマンドで試行")
+        yield('/item ' .. tostring(BAIT_ITEM_ID))
+    end
     wait(1.5)
+    log("  AutoHook プリセット=" .. AUTOHOOK_PRESET)
     yield('/ahset "' .. AUTOHOOK_PRESET .. '"')
     yield("/ahon")
     wait(1)
     if NEEDS_COLLECTABLE then
+        log("  収集品採集 ON")
         yield('/ac "収集品採集"')
         wait(1)
     end
+    log("setup_rig 完了")
 end
 
 local function cast()
+    log("キャスティング")
     yield('/ac "キャスティング"')
     wait(2)
 end
@@ -540,8 +554,10 @@ end
 -- 1 ポイント分の釣りループ
 -- return: "inv_full" | "timeout" | "done"
 local function fish_at_spot(duration_sec)
+    log("fish_at_spot 開始 duration=" .. duration_sec)
     setup_rig()
     local start_t = os.time()
+    log("  fishing条件: " .. tostring(cond(COND.fishing)))
     if not cond(COND.fishing) then cast() end
 
     while (os.time() - start_t) < duration_sec do
