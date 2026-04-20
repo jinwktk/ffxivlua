@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "5dfca3c"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:21"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "a10022a"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:22"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -271,19 +271,9 @@ local function mount_up()
         log("既にマウント中")
         return
     end
-    log("マウント開始")
-    local fn = safe_get("Actions.ExecuteGeneralAction")
-    if fn then
-        pcall(fn, 9)  -- マウントルーレット
-    else
-        yield('/gaction マウントルーレット')
-    end
-    local ok = wait_until(function() return cond(COND.mounted) end, 8)
-    if not ok then
-        log("  マウント失敗、/mount フォールバック")
-        yield('/mount ウィング・オブ・ミスト')
-        wait_until(function() return cond(COND.mounted) end, 5)
-    end
+    log("マウント開始: /mount ウィング・オブ・ミスト")
+    yield('/mount ウィング・オブ・ミスト')
+    wait_until(function() return cond(COND.mounted) end, 8)
     wait(1)
     log("  マウント完了: " .. tostring(cond(COND.mounted)))
 end
