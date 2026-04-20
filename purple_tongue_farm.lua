@@ -178,8 +178,32 @@ local COND = {
 -- ヘルパー --------------------------------------------------------
 ------------------------------------------------------------------
 
+------------------------------------------------------------------
+-- ファイルログ (リポジトリ直下 ptf.log に追記) ---------------------
+------------------------------------------------------------------
+local LOG_FILE_PATH = "C:\\Users\\mlove\\Documents\\GitHub\\ffxivlua\\ptf.log"
+local _log_file = nil
+local function _open_log()
+    if _log_file then return true end
+    local ok, f = pcall(io.open, LOG_FILE_PATH, "a")
+    if ok and f then
+        _log_file = f
+        _log_file:write(string.format("==== session start %s ====\n", os.date("%Y-%m-%d %H:%M:%S")))
+        _log_file:flush()
+        return true
+    end
+    return false
+end
+
 local function log(msg)
-    if DEBUG then yield("/echo [PTF] " .. tostring(msg)) end
+    local line = "[PTF] " .. tostring(msg)
+    if DEBUG then yield("/echo " .. line) end
+    if _open_log() then
+        pcall(function()
+            _log_file:write(os.date("%H:%M:%S ") .. line .. "\n")
+            _log_file:flush()
+        end)
+    end
 end
 
 local function wait(sec)
