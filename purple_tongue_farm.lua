@@ -44,42 +44,6 @@ configs:
     description: Lifestream で使うエーテライト名
     type: string
     required: true
-  spot1_x:
-    default: 202.19057
-    type: float
-    required: true
-  spot1_y:
-    default: 128.03957
-    type: float
-    required: true
-  spot1_z:
-    default: -13.55115
-    type: float
-    required: true
-  spot2_x:
-    default: 156.48239
-    type: float
-    required: true
-  spot2_y:
-    default: 118.766556
-    type: float
-    required: true
-  spot2_z:
-    default: 67.60431
-    type: float
-    required: true
-  spot3_x:
-    default: 47.8799
-    type: float
-    required: true
-  spot3_y:
-    default: 118.18503
-    type: float
-    required: true
-  spot3_z:
-    default: 91.6896
-    type: float
-    required: true
   use_flight:
     default: true
     type: bool
@@ -110,8 +74,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "1ce4440"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 18:20"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "1eba58b"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:26"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -134,19 +98,11 @@ local opts = {
     use_flight          = cfg("use_flight", true),
     needs_collectable   = cfg("needs_collectable", true),
     debug               = cfg("debug", true),
+    -- 釣り場座標はスクリプト内に直接記述
     spots = {
-        { name = "ポイント1",
-          x = cfg("spot1_x", 202.19057),
-          y = cfg("spot1_y", 128.03957),
-          z = cfg("spot1_z", -13.55115) },
-        { name = "ポイント2",
-          x = cfg("spot2_x", 156.48239),
-          y = cfg("spot2_y", 118.766556),
-          z = cfg("spot2_z",  67.60431) },
-        { name = "ポイント3",
-          x = cfg("spot3_x",  47.8799),
-          y = cfg("spot3_y", 118.18503),
-          z = cfg("spot3_z",  91.6896) },
+        { name = "ポイント1", x = 202.19057, y = 128.03957, z = -13.55115 },
+        { name = "ポイント2", x = 156.48239, y = 118.766556, z =  67.60431 },
+        { name = "ポイント3", x =  47.8799,  y = 118.18503,  z =  91.6896  },
     },
 }
 
