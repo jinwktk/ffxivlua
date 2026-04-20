@@ -110,8 +110,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "5d8c7d8"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 18:06"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "43fe7d1"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:11"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------

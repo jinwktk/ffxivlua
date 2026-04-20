@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "5d8c7d8"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:06"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "43fe7d1"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:11"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -339,12 +339,26 @@ local function cast()
     wait(2)
 end
 
+-- 釣り中フラグを確実に落とす。AutoHook off → おさめる → fishing=false 待機。
+-- 精選前に必須 (釣り中は精選アクション不可)
 local function quit_fishing()
-    if cond(COND.fishing) then
+    log("釣り終了処理")
+    yield("/ahoff")
+    wait(0.5)
+    -- おさめる を最大3回まで送って fishing=false を待つ
+    for i = 1, 3 do
+        if not cond(COND.fishing) then
+            log("  fishing=false 確認 (i=" .. i .. ")")
+            break
+        end
+        log("  /ac おさめる (" .. i .. ")")
         yield('/ac おさめる')
-        wait_until(function() return not cond(COND.fishing) end, 6)
-        wait(1)
+        wait_until(function() return not cond(COND.fishing) end, 4)
     end
+    -- 念のためキャスティング中も終わるまで待つ
+    wait_until(function() return not cond(COND.casting) end, 4)
+    wait(1)
+    log("  釣り終了 fishing=" .. tostring(cond(COND.fishing)))
 end
 
 local function fish_at_spot(duration_sec)
