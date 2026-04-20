@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "1eba58b"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:26"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "f67350f"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:29"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -366,16 +366,34 @@ local function fish_at_spot(duration_sec)
     setup_rig()
     local start_t = os.time()
     log("  fishing条件: " .. tostring(cond(COND.fishing)))
-    if not cond(COND.fishing) then cast() end
+
+    local max_cast_failures = 3
+    local cast_failures = 0
 
     while (os.time() - start_t) < duration_sec do
-        -- インベ満杯判定: 空きが少なく、かつ紫の舌先を1つ以上持っているとき
         if free_slots() <= cfg.inventory_free_limit
            and item_count(FISH_ITEM_ID) > 0 then
             return "inv_full"
         end
         if item_count(SAND_ITEM_ID) >= cfg.target then return "done" end
-        if not cond(COND.fishing) and not cond(COND.casting) then cast() end
+
+        if not cond(COND.fishing) and not cond(COND.casting) then
+            cast()
+            local ok = wait_until(function()
+                return cond(COND.fishing) or cond(COND.casting)
+            end, 5)
+            if not ok then
+                cast_failures = cast_failures + 1
+                log(string.format("  キャスト失敗 %d/%d (釣り場外の可能性)",
+                    cast_failures, max_cast_failures))
+                if cast_failures >= max_cast_failures then
+                    log("  → 次のポイントへ移動")
+                    return "no_fish_spot"
+                end
+            else
+                cast_failures = 0
+            end
+        end
         wait(2)
     end
     return "timeout"
