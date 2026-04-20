@@ -2,44 +2,67 @@
 
 FFXIV SomethingNeedDoing (SND) 用の Lua 自動化スクリプト集。
 
-## スクリプト一覧
+## ファイル構成
 
-### `purple_tongue_farm.lua`
-紫の舌先（Purple Tongue）を釣って精選し、紫電の霊砂（Purple Lightning Sand）を自動収集するスクリプト。
+```
+purple_tongue_farm.lua      ← メイン（SND Metadata + Config + 実行）
+lib/
+  └── ptf_lib.lua          ← 実装本体（ヘルパー / 移動 / 釣り / 精選）
+```
 
-**機能**
-- 3 箇所の釣りポイントを指定時間でローテーション
-- インベントリが一杯になったら自動で精選(Aetherial Reduction)
-- 紫電の霊砂を指定数集めたら終了
-- **SND の `[[SND Metadata]]` 機能を使用。全設定をゲーム内 Config タブから編集可能**
+メインは設定と呼び出しだけ。実装を変更しても SND 側はメインを再読込しなくて済む。
 
-**必要プラグイン**
-- SomethingNeedDoing (Expanded Edition)
-- vnavmesh
-- Lifestream
-- AutoHook
+## セットアップ
 
-**使い方**
-1. SND に `purple_tongue_farm.lua` をインポート
-2. マクロを選択 → **Config タブ**で以下の値を設定（ゲーム内でGUI編集可）
-   - `target_sand_count` : 紫電の霊砂の目標数（既定 99）
-   - `time_per_spot_sec` : 1 釣り場あたりの滞在秒数（既定 900 = 15 分）
-   - `bait_item_id`      : 使用する餌の ItemId
-   - `autohook_preset`   : AutoHook 側のプリセット名（既定 "紫の舌先"）
-   - `aetheryte_name`    : Lifestream エーテライト名（既定 "朋友の灯火"）
-   - `spot1_x/y/z` 〜 `spot3_x/y/z` : 3 つの釣り場ワールド座標
-   - `use_flight` / `needs_collectable` / `debug`
-3. AutoHook で「紫の舌先」用プリセットを事前に作成
-4. 漁師でログイン、インベントリを空けて実行
+### 1. Macro Dependencies に lib/ptf_lib.lua を追加
 
-**固定値（ItemId、スクリプト先頭で定義）**
+SND のマクロ画面 → **Macro Dependencies** → **Add New Dependency** →
+- **Local** を選択
+- **Local Dependency Type: File** を選択
+- 下記のフルパスを貼り付け:
+  ```
+  C:\Users\mlove\Documents\GitHub\ffxivlua\lib\ptf_lib.lua
+  ```
+- **Add File Dependency** を押す
+
+これで `_G.PTF` が使えるようになる。
+
+### 2. メインスクリプトを登録
+
+`purple_tongue_farm.lua` を SND マクロとしてインポート or 貼り付け。
+
+### 3. Config タブでパラメータ調整
+
+ゲーム内の Config タブから変更可能:
+- `target_sand_count`(99) / `time_per_spot_sec`(900)
+- `bait_item_id` / `autohook_preset`(紫の舌先) / `aetheryte_name`(朋友の灯火)
+- 3点の `spot1_x/y/z` 〜 `spot3_x/y/z`
+- `use_flight` / `needs_collectable` / `debug`
+
+### 4. 実行
+- 漁師でログイン、インベントリを空ける
+- AutoHook で指定プリセットを事前作成
+- SND でマクロを実行
+
+## バージョン識別
+
+`ptf.log` 先頭と `/echo` に **コミットSHA + ビルド日時** が出る。
+
+### pre-commit hook セットアップ (初回のみ)
+```
+git config core.hooksPath .githooks
+```
+
+コミット毎に `SCRIPT_VERSION` / `LIB_VERSION` が自動更新される。
+
+## 固定値 (ItemId)
 
 | 名称 | ItemId |
 |---|---|
 | 紫の舌先 | 46249 |
 | 紫電の霊砂 | 46246 |
 
-**既定の釣り場座標 (朋友の灯火 付近)**
+## 既定の釣り場 (朋友の灯火付近)
 
 | # | X | Y | Z |
 |---|---|---|---|
@@ -47,24 +70,9 @@ FFXIV SomethingNeedDoing (SND) 用の Lua 自動化スクリプト集。
 | 2 | -24.975 | 21.487 | -58.947 |
 | 3 | 158.372 | 24.070 | -17.322 |
 
-## バージョン識別
-
-`ptf.log` の先頭行と起動時の `/echo` に **コミットSHA + ビルド日時** が出力されます：
-```
-==== session start 2026-04-20 17:45:12 | ver=cfb0bc4 build=2026-04-20 17:39 ====
-[PTF] === purple_tongue_farm ver=cfb0bc4 build=2026-04-20 17:39 ===
-```
-SND 側のキャッシュに気付かず古い版を回してしまう事故を防ぐため。
-
-### hook セットアップ (クローン直後に1回)
-```
-git config core.hooksPath .githooks
-```
-以降、commit のたびに `purple_tongue_farm.lua` の `SCRIPT_VERSION` / `SCRIPT_BUILD` が自動で更新されます。
-
 ## 参考
 
 - https://github.com/Jaksuhn/SomethingNeedDoing
 - https://github.com/Jaksuhn/SomethingNeedDoing/wiki/Macro-Configs
-- https://github.com/pot0to/pot0to-SND-Scripts/
-- https://github.com/lycopersicon-esculentum/ffxiv-snd-scripts
+- https://github.com/OhKannaDuh/Ferret （モジュール化の参考）
+- https://github.com/WigglyMuffin/SNDScripts （API使用例）
