@@ -221,10 +221,50 @@ local function wait_until(fn, timeout_sec)
 end
 
 ------------------------------------------------------------------
+-- 現在位置 / 距離判定 --------------------------------------------
+------------------------------------------------------------------
+
+-- プレイヤー位置を取得（Svc.ClientState 優先、無ければ legacy）
+local function player_pos()
+    if Svc and Svc.ClientState and Svc.ClientState.LocalPlayer then
+        local p = Svc.ClientState.LocalPlayer.Position
+        if p then return p.X, p.Y, p.Z end
+    end
+    if GetPlayerRawXPos then
+        local ok, x, y, z = pcall(function()
+            return GetPlayerRawXPos(), GetPlayerRawYPos(), GetPlayerRawZPos()
+        end)
+        if ok then return x, y, z end
+    end
+    return nil, nil, nil
+end
+
+local function dist_xz(ax, az, bx, bz)
+    local dx = ax - bx
+    local dz = az - bz
+    return math.sqrt(dx * dx + dz * dz)
+end
+
+-- いずれかの釣り場が近いなら「既に現地にいる」と判定
+local function near_any_spot(radius)
+    local px, _, pz = player_pos()
+    if not px then return false end
+    for _, s in ipairs(FISHING_SPOTS) do
+        if dist_xz(px, pz, s.x, s.z) <= radius then return true end
+    end
+    return false
+end
+
+------------------------------------------------------------------
 -- 移動 ------------------------------------------------------------
 ------------------------------------------------------------------
 
 local function teleport_to(aetheryte)
+    -- 既に釣り場付近 (半径 400 以内) にいるならテレポ省略
+    if near_any_spot(400) then
+        log("既に現地付近にいるためテレポ省略")
+        return
+    end
     log("テレポ: " .. aetheryte)
     yield('/li tp ' .. aetheryte)
     wait(2)
@@ -246,19 +286,40 @@ local function dismount()
     wait_until(function() return not cond(COND.mounted) end, 5)
 end
 
+-- 目的地に近づくまで待機（到達判定）
+local function wait_arrival(spot, timeout_sec)
+    local t, step = 0, 1.0
+    while t < timeout_sec do
+        local px, _, pz = player_pos()
+        if px and dist_xz(px, pz, spot.x, spot.z) <= 3.0 then
+            return true
+        end
+        yield("/wait " .. step)
+        t = t + step
+    end
+    return false
+end
+
 local function move_to(spot)
+    -- 既に目の前 (半径 5) なら移動不要
+    local px, _, pz = player_pos()
+    if px and dist_xz(px, pz, spot.x, spot.z) <= 5.0 then
+        log("目的地に到着済")
+        return
+    end
+
     if USE_FLIGHT then mount_up() end
 
-    if IPC and IPC.vnavmesh and IPC.vnavmesh.PathfindAndMoveTo then
-        IPC.vnavmesh.PathfindAndMoveTo({x = spot.x, y = spot.y, z = spot.z}, USE_FLIGHT)
-        wait_until(function()
-            return not IPC.vnavmesh.PathfindInProgress() and not IPC.vnavmesh.IsRunning()
-        end, 240)
-    else
-        local cmd = USE_FLIGHT and "/vnav flyto " or "/vnav moveto "
-        yield(cmd .. string.format("%.2f %.2f %.2f", spot.x, spot.y, spot.z))
-        wait(30)
-        yield("/vnav stop")
+    -- vnavmesh はチャットコマンド経由 (IPC より安定)
+    local cmd = USE_FLIGHT and "/vnav flyto " or "/vnav moveto "
+    yield(cmd .. string.format("%.2f %.2f %.2f", spot.x, spot.y, spot.z))
+
+    local arrived = wait_arrival(spot, 240)
+    yield("/vnav stop")
+    wait(1)
+
+    if not arrived then
+        log("警告: 到達タイムアウト、続行")
     end
 
     dismount()
