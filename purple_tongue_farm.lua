@@ -210,38 +210,41 @@ local function wait(sec)
     yield("/wait " .. tostring(sec))
 end
 
--- SND グローバル関数ラッパー（存在しない環境への安全フォールバック）
-local function safe_call(name, ...)
-    local fn = rawget(_G, name)
-    if type(fn) == "function" then
-        local ok, ret = pcall(fn, ...)
-        if ok then return ret end
+-- SND Expanded Edition は Svc / Inventory / IPC 名前空間 API
+local function safe_get(path)
+    -- "Svc.Condition" 等をドットで辿って取得
+    local obj = _G
+    for seg in string.gmatch(path, "[^.]+") do
+        if type(obj) ~= "table" then return nil end
+        obj = rawget(obj, seg)
+        if obj == nil then return nil end
     end
-    return nil
+    return obj
 end
 
 local function cond(id)
-    local v = safe_call("GetCharacterCondition", id)
-    if v ~= nil then return v == true end
-    if Svc and Svc.Condition then return Svc.Condition[id] == true end
+    local tbl = safe_get("Svc.Condition")
+    if tbl then
+        local ok, v = pcall(function() return tbl[id] end)
+        if ok then return v == true end
+    end
     return false
 end
 
 local function item_count(id)
-    -- vac_functions 互換: GetItemCount(id) がSND組込
-    local v = safe_call("GetItemCount", id)
-    if v ~= nil then return tonumber(v) or 0 end
-    if Inventory and Inventory.GetItemCount then
-        return Inventory.GetItemCount(id) or 0
+    local fn = safe_get("Inventory.GetItemCount")
+    if fn then
+        local ok, v = pcall(fn, id)
+        if ok then return tonumber(v) or 0 end
     end
     return 0
 end
 
 local function free_slots()
-    local v = safe_call("GetInventoryFreeSlotCount")
-    if v ~= nil then return tonumber(v) or 0 end
-    if Inventory and Inventory.GetFreeInventorySlots then
-        return Inventory.GetFreeInventorySlots() or 0
+    local fn = safe_get("Inventory.GetFreeInventorySlots")
+    if fn then
+        local ok, v = pcall(fn)
+        if ok then return tonumber(v) or 0 end
     end
     return 35
 end
@@ -260,50 +263,59 @@ end
 -- プレイヤー状態 / 位置 ------------------------------------------
 ------------------------------------------------------------------
 
+local function player_obj()
+    return safe_get("Svc.ClientState.LocalPlayer")
+end
+
 local function player_ready()
-    local v = safe_call("IsPlayerAvailable")
-    return v == nil or v == true
+    local p = player_obj()
+    return p ~= nil
 end
 
 local function player_casting()
-    local v = safe_call("IsPlayerCasting")
-    return v == true
-end
-
-local function is_moving()
-    local v = safe_call("IsMoving")
-    return v == true
+    local p = player_obj()
+    if not p then return false end
+    local ok, v = pcall(function() return p.IsCasting end)
+    return ok and v == true
 end
 
 local function path_running()
-    local v = safe_call("PathIsRunning")
-    return v == true
+    local fn = safe_get("IPC.vnavmesh.IsRunning")
+    if fn then
+        local ok, v = pcall(fn)
+        return ok and v == true
+    end
+    return false
 end
 
-local function lifestream_busy()
-    local v = safe_call("LifestreamIsBusy")
-    return v == true
+local function pathfind_in_progress()
+    local fn = safe_get("IPC.vnavmesh.PathfindInProgress")
+    if fn then
+        local ok, v = pcall(fn)
+        return ok and v == true
+    end
+    return false
 end
 
 local function zone_id()
-    return safe_call("GetZoneID")
-end
-
-local function find_zone_by_aetheryte(name)
-    return safe_call("FindZoneIDByAetheryte", name)
+    local v = safe_get("Svc.ClientState.TerritoryType")
+    if v ~= nil then return tonumber(v) end
+    return nil
 end
 
 local function player_pos()
-    local x = safe_call("GetPlayerRawXPos")
-    local y = safe_call("GetPlayerRawYPos")
-    local z = safe_call("GetPlayerRawZPos")
-    return x, y, z
+    local p = player_obj()
+    if not p then return nil, nil, nil end
+    local ok, pos = pcall(function() return p.Position end)
+    if not ok or not pos then return nil, nil, nil end
+    local okx, x = pcall(function() return pos.X end)
+    local oky, y = pcall(function() return pos.Y end)
+    local okz, z = pcall(function() return pos.Z end)
+    if okx and oky and okz then return x, y, z end
+    return nil, nil, nil
 end
 
--- SND 組込 GetDistanceToPoint があればそれを使う（XYZ 三次元）
 local function distance_to(x, y, z)
-    local v = safe_call("GetDistanceToPoint", x, y, z)
-    if v ~= nil then return tonumber(v) end
     local px, py, pz = player_pos()
     if not px then return nil end
     local dx, dy, dz = px - x, (py or 0) - (y or 0), pz - z
@@ -319,76 +331,56 @@ end
 -- 移動 ------------------------------------------------------------
 ------------------------------------------------------------------
 
--- 既に目的ゾーンにいるか判定（vac_functions の ZoneCheck 相当）
-local function already_in_target_zone(aetheryte)
-    local target = find_zone_by_aetheryte(aetheryte)
-    local current = zone_id()
-    log(string.format("Zone判定: current=%s target=%s aetheryte=%s",
-        tostring(current), tostring(target), tostring(aetheryte)))
-    if target and current then
-        local same = (target == current)
-        log("  → zone一致: " .. tostring(same))
-        return same
-    end
-    -- FindZoneIDByAetheryte が使えない場合は距離で代替判定
-    local px, py, pz = player_pos()
-    log(string.format("  フォールバック距離判定  pos=(%s,%s,%s)",
-        tostring(px), tostring(py), tostring(pz)))
-    if not px then
-        log("  → 位置取得失敗 false")
-        return false
-    end
+-- 既に目的地付近 (釣り場いずれかに近い) ならテレポ省略
+local function already_near_spots()
+    local px, _, pz = player_pos()
+    log(string.format("位置判定  pos=(%s,%s,%s) zoneId=%s",
+        tostring(px), "…", tostring(pz), tostring(zone_id())))
+    if not px then return false end
     for i, s in ipairs(FISHING_SPOTS) do
         local d = dist_xz(px, pz, s.x, s.z)
         log(string.format("  spot%d 距離=%.1f", i, d))
         if d <= 500 then
-            log("  → 500以内 true")
+            log("  → 500以内、テレポ省略")
             return true
         end
     end
-    log("  → 遠い false")
     return false
 end
 
--- Lifestream によるテレポ（vac_functions.Teleporter を簡略化）
+-- Lifestream によるテレポ (Svc.Condition[45]/[51] で完了検出)
 local function teleport_to(aetheryte)
-    if already_in_target_zone(aetheryte) then
-        log("既に対象ゾーン内、テレポ省略")
-        return
-    end
-
-    -- 準備待機
-    wait_until(function()
-        return player_ready() and not player_casting()
-            and not cond(26) and not cond(32)
-    end, 30)
+    if already_near_spots() then return end
 
     log("テレポ: " .. aetheryte)
-    local retries, max_retries = 0, 10
-    while retries < max_retries do
-        if not player_casting() then
-            yield('/li ' .. aetheryte)
-            wait(2)
-        end
-        if lifestream_busy() then
-            -- Lifestream 処理中: 完了まで待機
-            wait_until(function()
-                return not lifestream_busy() and player_ready()
-            end, 60)
-            break
-        end
-        retries = retries + 1
-        log("Lifestream リトライ #" .. retries)
+
+    -- IPC.Lifestream.ExecuteCommand が使えるならそちらを優先
+    local li_exec = safe_get("IPC.Lifestream.ExecuteCommand")
+    if li_exec then
+        local ok = pcall(li_exec, aetheryte)
+        log("  IPC.Lifestream.ExecuteCommand  ok=" .. tostring(ok))
+    else
+        yield('/li ' .. aetheryte)
+        log("  /li コマンド送信")
     end
 
-    if retries >= max_retries then
-        log("Lifestream 失敗: " .. max_retries .. "回")
-        yield("/lifestream stop")
-    end
+    -- テレポ開始を待つ (betweenAreas = 45, betweenAreas51 = 51)
+    local started = wait_until(function()
+        return cond(45) or cond(51)
+    end, 10)
+    log("  テレポ開始: " .. tostring(started))
 
-    wait_until(function()
-        return player_ready() and not player_casting()
-    end, 30)
+    -- 到着待ち
+    if started then
+        wait_until(function()
+            return not cond(45) and not cond(51)
+        end, 60)
+        log("  テレポ完了 zoneId=" .. tostring(zone_id()))
+        wait(3)
+    else
+        log("  警告: テレポ開始せず、続行")
+        wait(3)
+    end
 end
 
 local function mount_up()
@@ -531,23 +523,23 @@ end
 -- メインループ ----------------------------------------------------
 ------------------------------------------------------------------
 
--- 起動時に利用可能な SND API をダンプする
+-- 起動時に SND 名前空間 API の利用可能性をダンプ
 local function dump_api_availability()
-    log("=== SND API チェック ===")
-    local names = {
-        "GetPlayerRawXPos", "GetPlayerRawYPos", "GetPlayerRawZPos",
-        "GetZoneID", "FindZoneIDByAetheryte",
-        "GetDistanceToPoint", "GetCharacterCondition",
-        "GetItemCount", "GetInventoryFreeSlotCount",
-        "IsPlayerAvailable", "IsPlayerCasting", "IsMoving",
-        "LifestreamIsBusy", "PathIsRunning",
+    log("=== SND Namespace API チェック ===")
+    local paths = {
+        "Svc", "Svc.Condition", "Svc.ClientState",
+        "Svc.ClientState.LocalPlayer", "Svc.ClientState.TerritoryType",
+        "Inventory", "Inventory.GetItemCount", "Inventory.GetFreeInventorySlots",
+        "IPC", "IPC.Lifestream", "IPC.Lifestream.ExecuteCommand",
+        "IPC.vnavmesh", "IPC.vnavmesh.PathfindAndMoveTo",
+        "IPC.vnavmesh.IsRunning", "IPC.vnavmesh.PathfindInProgress",
+        "Actions", "Actions.ExecuteAction", "Actions.ExecuteGeneralAction",
+        "Config", "Config.Get",
     }
-    for _, n in ipairs(names) do
-        local t = type(rawget(_G, n))
-        log(string.format("  %-28s = %s", n, t))
+    for _, p in ipairs(paths) do
+        local v = safe_get(p)
+        log(string.format("  %-42s = %s", p, type(v)))
     end
-    local cfg_avail = (Config and type(Config.Get) == "function") and "OK" or "none"
-    log("  Config.Get                   = " .. cfg_avail)
     log("======================")
 end
 
