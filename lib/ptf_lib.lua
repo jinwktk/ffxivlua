@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "af43cf4"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:11"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "335fa28"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:15"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -112,10 +112,10 @@ local function free_slots()
     local fn = safe_get("Inventory.GetFreeInventorySlots")
     if fn then
         local ok, v = pcall(fn)
-        if ok then return tonumber(v) or 0 end
+        if ok then return tonumber(v) or 35 end
     end
-    -- API が取れない時は「満杯扱い」で精選側に倒す (取りこぼし防止)
-    return 0
+    -- API 取得失敗時は「空きあり」として釣りを継続させる
+    return 35
 end
 
 local function wait_until(fn, timeout_sec)
@@ -369,7 +369,11 @@ local function fish_at_spot(duration_sec)
     if not cond(COND.fishing) then cast() end
 
     while (os.time() - start_t) < duration_sec do
-        if free_slots() <= cfg.inventory_free_limit then return "inv_full" end
+        -- インベ満杯判定: 空きが少なく、かつ紫の舌先を1つ以上持っているとき
+        if free_slots() <= cfg.inventory_free_limit
+           and item_count(FISH_ITEM_ID) > 0 then
+            return "inv_full"
+        end
         if item_count(SAND_ITEM_ID) >= cfg.target then return "done" end
         if not cond(COND.fishing) and not cond(COND.casting) then cast() end
         wait(2)
@@ -384,7 +388,12 @@ local function stop_fishing()
 end
 
 local function reduce_all()
-    log("精選開始 fish=" .. item_count(FISH_ITEM_ID))
+    local n = item_count(FISH_ITEM_ID)
+    log("精選開始 fish=" .. n)
+    if n <= 0 then
+        log("  紫の舌先 0 → 精選スキップ")
+        return
+    end
     local safety = 0
     while item_count(FISH_ITEM_ID) > 0 and safety < 500 do
         yield('/ac 精選')
