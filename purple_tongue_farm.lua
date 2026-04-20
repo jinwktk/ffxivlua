@@ -23,10 +23,10 @@
 -- ユーザー設定 ----------------------------------------------------
 ------------------------------------------------------------------
 
--- 紫の舌先 (収集品)  ※要確認
-local FISH_ITEM_ID          = 44131
--- 紫電の霊砂 の ItemId  ※要確認
-local SAND_ITEM_ID          = 44137
+-- 紫の舌先 (収集品)  GarlandTools 確認済み
+local FISH_ITEM_ID          = 46249
+-- 紫電の霊砂 の ItemId   GarlandTools 確認済み
+local SAND_ITEM_ID          = 46246
 -- 目標数（紫電の霊砂）
 local TARGET_SAND_COUNT     = 99
 
@@ -44,11 +44,11 @@ local TIME_PER_SPOT_SEC     = 900         -- 15 分
 --   x,y,z     : ワールド座標
 --   fly       : 飛行で移動するか
 local FISHING_SPOTS = {
-    { name = "ポイント1", aetheryte = "フィーストファイアズ",
+    { name = "ポイント1", aetheryte = "エレクトープ発電所",
       x =   6.215, y =  25.185, z =  24.578, fly = true },
-    { name = "ポイント2", aetheryte = "フィーストファイアズ",
+    { name = "ポイント2", aetheryte = "エレクトープ発電所",
       x = -24.975, y =  21.487, z = -58.947, fly = true },
-    { name = "ポイント3", aetheryte = "フィーストファイアズ",
+    { name = "ポイント3", aetheryte = "エレクトープ発電所",
       x = 158.372, y =  24.070, z = -17.322, fly = true },
 }
 

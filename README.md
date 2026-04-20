@@ -19,12 +19,21 @@ FFXIV SomethingNeedDoing (SND) 用の Lua 自動化スクリプト集。
 - AutoHook
 
 **使い方**
-1. `purple_tongue_farm.lua` 冒頭の「ユーザー設定」を埋める
-   - `FISH_ITEM_ID` / `SAND_ITEM_ID` / `BAIT_ITEM_ID`
-   - `AUTOHOOK_PRESET`（AutoHook 側に事前登録）
-   - `FISHING_SPOTS` に 3 箇所の座標とエーテライト
-   - `TIME_PER_SPOT_SEC`（1 箇所の滞在秒数、既定 15 分）
-   - `TARGET_SAND_COUNT`（紫電の霊砂の目標数）
+1. `purple_tongue_farm.lua` 冒頭の「ユーザー設定」を確認
+   - `FISH_ITEM_ID = 46249`（紫の舌先）  GarlandTools 確認済み
+   - `SAND_ITEM_ID = 46246`（紫電の霊砂）GarlandTools 確認済み
+   - `BAIT_ITEM_ID`（使用する餌の ItemId）  **要設定**
+   - `AUTOHOOK_PRESET`（AutoHook に事前登録したプリセット名）  **要設定**
+   - `FISHING_SPOTS` の `aetheryte` が正しいか確認（既定: エレクトープ発電所）
+   - `TIME_PER_SPOT_SEC`（1 箇所の滞在秒数、既定 900 = 15 分）
+   - `TARGET_SAND_COUNT`（紫電の霊砂の目標数、既定 99）
+
+**登録済み座標 (Heritage Found / クル・シャゲ想定)**
+| # | X | Y | Z |
+|---|---|---|---|
+| 1 |   6.215 | 25.185 |  24.578 |
+| 2 | -24.975 | 21.487 | -58.947 |
+| 3 | 158.372 | 24.070 | -17.322 |
 2. 漁師でログイン、インベントリを空ける
 3. SND で本スクリプトを実行
 
