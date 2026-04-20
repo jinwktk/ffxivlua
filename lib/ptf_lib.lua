@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "a10022a"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:22"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "60ddab6"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:28"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -99,65 +99,48 @@ local function cond(id)
     return c and safe_index(c, id) == true
 end
 
--- NQ の個数
-local function item_count(id)
-    local fn = safe_get("Inventory.GetItemCount")
-    if fn then
-        local ok, v = pcall(fn, id)
-        if ok then return tonumber(v) or 0 end
+-- 汎用: path で指定した API 関数を呼んで値を返す (失敗時 default)
+local function call_api(path, default, ...)
+    local fn = safe_get(path)
+    if type(fn) == "userdata" or type(fn) == "function" then
+        local ok, v = pcall(fn, ...)
+        if ok then
+            if type(v) == "number" then return v end
+            if type(v) == "boolean" then return v end
+            return v
+        end
     end
-    return 0
+    return default
 end
 
--- 収集品 (HQ / collectable) を含めた総数。紫の舌先のように
--- 収集品で釣れる魚は GetItemCount(id) に含まれない SND 実装があるため、
--- 代替 API も pcall で試す。
+-- 汎用: 数値戻り API を tonumber で正規化
+local function call_api_num(path, default, ...)
+    local v = call_api(path, default, ...)
+    return tonumber(v) or default
+end
+
+local function item_count(id)
+    return call_api_num("Inventory.GetItemCount", 0, id)
+end
+
+-- 収集品 (HQ / collectable) を含めた総数
 local function fish_count(id)
     local total = item_count(id)
-
-    -- Inventory.GetItemCount(id, includeHQ=true) を試す
-    local fn1 = safe_get("Inventory.GetItemCount")
-    if fn1 then
-        local ok, v = pcall(fn1, id, true)
-        if ok and tonumber(v) then
-            local n = tonumber(v)
-            if n > total then total = n end
-        end
-    end
-
-    -- Inventory.GetCollectableItemCount(id, quality=1) を試す
-    local fn2 = safe_get("Inventory.GetCollectableItemCount")
-    if fn2 then
-        local ok, v = pcall(fn2, id, 1)
-        if ok and tonumber(v) then
-            total = total + (tonumber(v) or 0)
-        end
-    end
-
-    -- Inventory.GetHQItemCount(id)
-    local fn3 = safe_get("Inventory.GetHQItemCount")
-    if fn3 then
-        local ok, v = pcall(fn3, id)
-        if ok and tonumber(v) then
-            total = total + (tonumber(v) or 0)
-        end
-    end
-
+    local hq = call_api_num("Inventory.GetItemCount", nil, id, true)
+    if hq and hq > total then total = hq end
+    total = total + (call_api_num("Inventory.GetCollectableItemCount", 0, id, 1) or 0)
+    total = total + (call_api_num("Inventory.GetHQItemCount", 0, id) or 0)
     return total
 end
 
 local function free_slots()
-    local fn = safe_get("Inventory.GetFreeInventorySlots")
-    if fn then
-        local ok, v = pcall(fn)
-        if ok then return tonumber(v) or 35 end
-    end
-    -- API 取得失敗時は「空きあり」として釣りを継続させる
-    return 35
+    return call_api_num("Inventory.GetFreeInventorySlots", 35)
 end
 
-local function wait_until(fn, timeout_sec)
-    local t, step = 0, 0.5
+-- より細かいポーリングで反応を早くする (0.25秒刻み)
+local function wait_until(fn, timeout_sec, step)
+    step = step or 0.25
+    local t = 0
     while not fn() do
         yield("/wait " .. step)
         t = t + step
@@ -202,23 +185,9 @@ local function distance_to(x, y, z)
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
 
-local function path_running()
-    local fn = safe_get("IPC.vnavmesh.IsRunning")
-    if fn then
-        local ok, v = pcall(fn)
-        return ok and v == true
-    end
-    return false
-end
-
-local function pathfind_in_progress()
-    local fn = safe_get("IPC.vnavmesh.PathfindInProgress")
-    if fn then
-        local ok, v = pcall(fn)
-        return ok and v == true
-    end
-    return false
-end
+local function path_running() return call_api("IPC.vnavmesh.IsRunning", false) == true end
+local function pathfind_in_progress() return call_api("IPC.vnavmesh.PathfindInProgress", false) == true end
+local function vnav_busy() return path_running() or pathfind_in_progress() end
 
 ------------------------------------------------------------------
 -- 移動 ------------------------------------------------------------
@@ -245,68 +214,49 @@ local function teleport_to(aetheryte)
     log("テレポ: " .. aetheryte)
     local li_exec = safe_get("IPC.Lifestream.ExecuteCommand")
     if li_exec then
-        local ok = pcall(li_exec, aetheryte)
-        log("  IPC.Lifestream.ExecuteCommand ok=" .. tostring(ok))
+        pcall(li_exec, aetheryte)
     else
         yield('/li ' .. aetheryte)
     end
 
-    local started = wait_until(function()
-        return cond(COND.betweenAreas) or cond(COND.loadingZone)
-    end, 10)
-    log("  テレポ開始: " .. tostring(started))
-    if started then
-        wait_until(function()
-            return not cond(COND.betweenAreas) and not cond(COND.loadingZone)
-        end, 60)
+    -- 転送開始まで最大8秒、完了まで最大60秒
+    if wait_until(function() return cond(COND.betweenAreas) or cond(COND.loadingZone) end, 8) then
+        wait_until(function() return not cond(COND.betweenAreas) and not cond(COND.loadingZone) end, 60)
         log("  テレポ完了 zoneId=" .. tostring(zone_id()))
-        wait(3)
+        wait(1.5)  -- 3→1.5 ロード後の入力受付を最低限確保
     else
-        wait(3)
+        log("  テレポ開始せず")
+        wait(1)
     end
 end
 
 local function mount_up()
-    if cond(COND.mounted) then
-        log("既にマウント中")
-        return
-    end
-    log("マウント開始: /mount ウィング・オブ・ミスト")
+    if cond(COND.mounted) then return end
+    log("マウント: /mount ウィング・オブ・ミスト")
     yield('/mount ウィング・オブ・ミスト')
     wait_until(function() return cond(COND.mounted) end, 8)
-    wait(1)
-    log("  マウント完了: " .. tostring(cond(COND.mounted)))
 end
 
 local function dismount()
     if not cond(COND.mounted) then return end
-    log("マウント解除")
     local fn = safe_get("Actions.ExecuteGeneralAction")
-    if fn then
-        pcall(fn, 23)
-    else
-        yield('/gaction マウント解除')
-    end
-    wait_until(function() return not cond(COND.mounted) end, 5)
+    if fn then pcall(fn, 23) else yield('/gaction マウント解除') end
+    wait_until(function() return not cond(COND.mounted) end, 4)
 end
 
 local function wait_arrival(spot, timeout_sec)
-    local t, step = 0, 1.0
-    local last_log = 0
+    local t, step, last_log = 0, 0.5, 0
     while t < timeout_sec do
         local d = distance_to(spot.x, spot.y, spot.z)
         if t - last_log >= 5 then
-            log(string.format("  移動中 d=%s pathfind=%s path=%s",
-                d and string.format("%.1f", d) or "?",
-                tostring(pathfind_in_progress()),
-                tostring(path_running())))
+            log(string.format("  移動中 d=%s busy=%s",
+                d and string.format("%.1f", d) or "?", tostring(vnav_busy())))
             last_log = t
         end
         if d and d <= 3.0 then return true end
-        if t > 5 and not path_running() and not pathfind_in_progress() then
-            if d and d <= 8.0 then return true end
-            log("  警告: path停止 d=" .. tostring(d))
-            return false
+        -- vnav 停止 + 起動から 3 秒経過 で到着/スタック判定
+        if t > 3 and not vnav_busy() then
+            return d and d <= 8.0
         end
         yield("/wait " .. step)
         t = t + step
@@ -317,7 +267,7 @@ end
 local function move_to(spot)
     local d = distance_to(spot.x, spot.y, spot.z)
     if d and d <= 5.0 then
-        log("目的地到着済 d=" .. string.format("%.1f", d))
+        log(string.format("到着済 d=%.1f", d))
         return
     end
 
@@ -328,42 +278,22 @@ local function move_to(spot)
 
     local arrived = wait_arrival(spot, 240)
     yield("/vnav stop")
-    wait(1)
     if not arrived then log("警告: 到達タイムアウト") end
 
     dismount()
-    wait(1)
 end
 
--- キャラクターを指定座標の方向に向ける (pointToFace)
--- /vnav moveto で該当点に歩かせ、パス開始を確認してから停止
+-- 指定座標の方向に向ける (pointToFace)
 local function face_point(fx, fy, fz)
-    log(string.format("face_point (%.2f, %.2f, %.2f)", fx, fy, fz))
+    log(string.format("face (%.1f,%.1f,%.1f)", fx, fy, fz))
     yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
-
-    -- パス計算開始を待つ (最大3秒)
-    local started = wait_until(function()
-        return pathfind_in_progress() or path_running()
-    end, 3)
-    log("  path開始: " .. tostring(started))
-
-    -- 実際に動き出すまで待つ (計算完了後に Running になる、最大5秒)
-    if started then
-        wait_until(function() return path_running() end, 5)
-        -- 動き出したら 2.5 秒歩かせて (十分に回頭+前進)
-        wait(2.5)
+    -- パス開始を最大2秒で確認し、動き出したら1.8秒で向きが固まる
+    if wait_until(vnav_busy, 2) then
+        wait(1.8)
     else
-        log("  警告: pathが開始しない、座標が到達不能かも")
-        -- フォールバック: IPC 直接呼び出し
-        local pf_mv = safe_get("IPC.vnavmesh.PathfindAndMoveTo")
-        if pf_mv then
-            pcall(pf_mv, {X = fx, Y = fy, Z = fz}, false)
-            wait(3)
-        end
+        log("  path開始せず")
     end
     yield("/vnav stop")
-    wait(0.5)
-    log("  face_point 終了")
 end
 
 local function goto_spot(spot)
@@ -386,53 +316,37 @@ end
 -- 釣り / 精選 ----------------------------------------------------
 ------------------------------------------------------------------
 local function setup_rig()
-    log("setup_rig 開始")
-    log("  /bait " .. tostring(cfg.bait))
+    log(string.format("setup_rig bait=%s preset=%s", tostring(cfg.bait), cfg.autohook_preset))
     yield('/bait ' .. tostring(cfg.bait))
-    wait(1.5)
-    log("  /ahpreset " .. cfg.autohook_preset)
+    wait(0.8)
     yield('/ahpreset ' .. cfg.autohook_preset)
     yield("/ahon")
-    wait(1)
+    wait(0.4)
     if cfg.needs_collectable then
-        log("  収集品採集 ON")
         yield('/ac 収集品採集')
-        wait(1)
+        wait(0.5)
     end
-    log("setup_rig 完了")
 end
 
 local function cast()
-    -- マウント中だとキャストできないので強制降車
-    if cond(COND.mounted) then
-        log("キャスト前: マウント解除")
-        dismount()
-    end
-    log("キャスティング")
+    if cond(COND.mounted) then dismount() end
     yield('/ac キャスティング')
-    wait(2)
+    wait(1)
 end
 
 -- 釣り中フラグを確実に落とす。AutoHook off → おさめる → fishing=false 待機。
 -- 精選前に必須 (釣り中は精選アクション不可)
 local function quit_fishing()
-    log("釣り終了処理")
+    log("釣り終了")
     yield("/ahoff")
-    wait(0.5)
-    -- おさめる を最大3回まで送って fishing=false を待つ
+    wait(0.3)
     for i = 1, 3 do
-        if not cond(COND.fishing) then
-            log("  fishing=false 確認 (i=" .. i .. ")")
-            break
-        end
-        log("  /ac 中断 (" .. i .. ")")
+        if not cond(COND.fishing) then break end
         yield('/ac 中断')
-        wait_until(function() return not cond(COND.fishing) end, 4)
+        wait_until(function() return not cond(COND.fishing) end, 3)
     end
-    -- 念のためキャスティング中も終わるまで待つ
-    wait_until(function() return not cond(COND.casting) end, 4)
-    wait(1)
-    log("  釣り終了 fishing=" .. tostring(cond(COND.fishing)))
+    wait_until(function() return not cond(COND.casting) end, 3)
+    log("  fishing=" .. tostring(cond(COND.fishing)))
 end
 
 local function fish_at_spot(duration_sec)
