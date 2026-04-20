@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "d558e4d"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:11"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "4f708d9"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:14"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -563,10 +563,6 @@ local function reduce_all()
         log("  /callback PurifyItemSelector true 12 0 送信")
         wait(1.5)
 
-        -- 精選結果ウィンドウ PurifyResult を閉じる
-        yield('/callback PurifyResult true 0')
-        wait(1)
-
         -- 精選演出完了まで待機 (cast 条件が落ちる)
         wait_until(function() return not cond(COND.casting) end, 15)
         wait(0.5)
@@ -584,6 +580,9 @@ local function reduce_all()
 
         safety = safety + 1
     end
+    -- ループ終了後、PurifyResult が残っていれば閉じる
+    yield('/callback PurifyResult true 0')
+    wait(0.5)
     log("精選完了 fish=" .. fish_count(FISH_ITEM_ID) .. " sand=" .. item_count(SAND_ITEM_ID))
 end
 
