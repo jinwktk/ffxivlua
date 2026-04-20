@@ -453,12 +453,24 @@ end
 
 local function wait_arrival(spot, timeout_sec)
     local t, step = 0, 1.0
+    local last_log = 0
     while t < timeout_sec do
         local d = distance_to(spot.x, spot.y, spot.z)
+        -- 5 秒おきに進捗ログ
+        if t - last_log >= 5 then
+            log(string.format("  移動中 d=%s pathfind=%s path=%s",
+                d and string.format("%.1f", d) or "?",
+                tostring(pathfind_in_progress()),
+                tostring(path_running())))
+            last_log = t
+        end
         if d and d <= 3.0 then return true end
-        if not path_running() and not is_moving() and t > 3 then
-            -- vnavmesh 停止済 かつ動いていない → 到達 or スタック
-            if d and d <= 5.0 then return true end
+        -- vnavmesh が停止 かつ距離 5 以内 なら到達とみなす
+        if t > 5 and not path_running() and not pathfind_in_progress() then
+            if d and d <= 8.0 then return true end
+            -- スタック検知: 距離が大きく変わらず path 停止
+            log("  警告: path 停止、d=" .. tostring(d))
+            return false
         end
         yield("/wait " .. step)
         t = t + step
