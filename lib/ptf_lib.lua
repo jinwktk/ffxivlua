@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "4f708d9"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:14"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "5dfca3c"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:21"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -281,7 +281,7 @@ local function mount_up()
     local ok = wait_until(function() return cond(COND.mounted) end, 8)
     if not ok then
         log("  マウント失敗、/mount フォールバック")
-        yield('/mount Company Chocobo')
+        yield('/mount ウィング・オブ・ミスト')
         wait_until(function() return cond(COND.mounted) end, 5)
     end
     wait(1)
