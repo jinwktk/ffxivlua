@@ -123,8 +123,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別（git pre-commit hook で自動置換される） ----------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "cfb0bc4"          -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 17:45" -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "4851334"          -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 17:46" -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId (ゲーム側で変わらないため Config 化しない) ----------
@@ -433,12 +433,12 @@ local function mount_up()
     if fn then
         pcall(fn, 9)
     else
-        yield('/gaction "マウントルーレット"')
+        yield('/gaction マウントルーレット')
     end
     local ok = wait_until(function() return cond(COND.mounted) end, 8)
     if not ok then
         log("  マウント失敗、/mount フォールバック")
-        yield('/mount "Company Chocobo"')
+        yield('/mount Company Chocobo')
         wait_until(function() return cond(COND.mounted) end, 5)
     end
     wait(1)
@@ -452,7 +452,7 @@ local function dismount()
     if fn then
         pcall(fn, 23)  -- マウント解除
     else
-        yield('/gaction "マウント解除"')
+        yield('/gaction マウント解除')
     end
     wait_until(function() return not cond(COND.mounted) end, 5)
 end
@@ -525,12 +525,12 @@ local function setup_rig()
     yield('/bait ' .. tostring(BAIT_ITEM_ID))
     wait(1.5)
     log("  AutoHook プリセット=" .. AUTOHOOK_PRESET)
-    yield('/ahpreset "' .. AUTOHOOK_PRESET .. '"')
+    yield('/ahpreset ' .. AUTOHOOK_PRESET)
     yield("/ahon")
     wait(1)
     if NEEDS_COLLECTABLE then
         log("  収集品採集 ON")
-        yield('/ac "収集品採集"')
+        yield('/ac 収集品採集')
         wait(1)
     end
     log("setup_rig 完了")
@@ -538,13 +538,13 @@ end
 
 local function cast()
     log("キャスティング")
-    yield('/ac "キャスティング"')
+    yield('/ac キャスティング')
     wait(2)
 end
 
 local function quit_fishing()
     if cond(COND.fishing) then
-        yield('/ac "おさめる"')
+        yield('/ac おさめる')
         wait_until(function() return not cond(COND.fishing) end, 6)
         wait(1)
     end
@@ -588,7 +588,7 @@ local function reduce_all()
     log("精選開始  fish=" .. item_count(FISH_ITEM_ID))
     local safety = 0
     while item_count(FISH_ITEM_ID) > 0 and safety < 500 do
-        yield('/ac "精選"')
+        yield('/ac 精選')
         wait(1)
         yield('/item ' .. tostring(FISH_ITEM_ID))
         wait(1)
