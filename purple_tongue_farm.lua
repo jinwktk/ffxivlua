@@ -1,4 +1,115 @@
---[[=====================================================================
+--[=====[
+[[SND Metadata]]
+author: jinwktk
+version: 0.2.0
+description: 紫の舌先を釣って精選し、紫電の霊砂を指定数集めるスクリプト。3つの釣り場を一定時間でローテーションする。
+plugin_dependencies:
+  - vnavmesh
+  - Lifestream
+  - AutoHook
+configs:
+  target_sand_count:
+    default: 99
+    description: 集めたい「紫電の霊砂」の個数
+    type: int
+    min: 1
+    max: 9999
+    required: true
+  time_per_spot_sec:
+    default: 900
+    description: 1 つの釣り場に滞在する秒数 (既定 900 秒 = 15 分)
+    type: int
+    min: 60
+    max: 7200
+    required: true
+  inventory_free_limit:
+    default: 1
+    description: 空きスロットがこの値以下になったら精選に入る
+    type: int
+    min: 0
+    max: 30
+    required: true
+  bait_item_id:
+    default: 29717
+    description: 使用する餌の ItemId (ゲーム内でアイテムを右クリック→マクロにコピーで確認)
+    type: int
+    min: 1
+    max: 999999
+    required: true
+  autohook_preset:
+    default: 紫の舌先
+    description: AutoHook 側で事前登録したプリセット名
+    type: string
+    required: true
+  aetheryte_name:
+    default: 朋友の灯火
+    description: Lifestream で使うエーテライト名 (日本語可)
+    type: string
+    required: true
+  spot1_x:
+    default: 6.215
+    description: 釣り場1 X
+    type: float
+    required: true
+  spot1_y:
+    default: 25.185
+    description: 釣り場1 Y (高度)
+    type: float
+    required: true
+  spot1_z:
+    default: 24.578
+    description: 釣り場1 Z
+    type: float
+    required: true
+  spot2_x:
+    default: -24.975
+    description: 釣り場2 X
+    type: float
+    required: true
+  spot2_y:
+    default: 21.487
+    description: 釣り場2 Y (高度)
+    type: float
+    required: true
+  spot2_z:
+    default: -58.947
+    description: 釣り場2 Z
+    type: float
+    required: true
+  spot3_x:
+    default: 158.372
+    description: 釣り場3 X
+    type: float
+    required: true
+  spot3_y:
+    default: 24.070
+    description: 釣り場3 Y (高度)
+    type: float
+    required: true
+  spot3_z:
+    default: -17.322
+    description: 釣り場3 Z
+    type: float
+    required: true
+  use_flight:
+    default: true
+    description: 釣り場への移動に飛行マウントを使う
+    type: bool
+    required: true
+  needs_collectable:
+    default: true
+    description: 収集品として釣る (精選に必要。紫の舌先は true)
+    type: bool
+    required: true
+  debug:
+    default: true
+    description: /echo でデバッグメッセージを出す
+    type: bool
+    required: true
+[[End Metadata]]
+--]=====]
+
+--[==[
   紫の舌先 釣り & 精選(紫電の霊砂) 自動化スクリプト for SomethingNeedDoing
   ---------------------------------------------------------------------
   概要:
@@ -6,59 +117,52 @@
     - インベントリが一杯になったら精選(Aetherial Reduction)で
       紫電の霊砂を取り出す
     - 紫電の霊砂を目標数集めたら終了
-
-  前提プラグイン:
-    - SomethingNeedDoing (Expanded Edition)
-    - vnavmesh
-    - Lifestream
-    - AutoHook
-
-  参考:
-    https://github.com/Jaksuhn/SomethingNeedDoing
-    https://github.com/pot0to/pot0to-SND-Scripts/
-    https://github.com/lycopersicon-esculentum/ffxiv-snd-scripts
-=====================================================================]]
+  ---------------------------------------------------------------------
+  設定はスクリプト冒頭の [[SND Metadata]] ブロックに宣言されており、
+  SND のマクロ Config タブから GUI 上で変更できる。
+]==]
 
 ------------------------------------------------------------------
--- ユーザー設定 ----------------------------------------------------
+-- 固定 ItemId (ゲーム側で変わらないため Config 化しない) ----------
 ------------------------------------------------------------------
+local FISH_ITEM_ID = 46249  -- 紫の舌先 (収集品)
+local SAND_ITEM_ID = 46246  -- 紫電の霊砂
 
--- 紫の舌先 (収集品)  GarlandTools 確認済み
-local FISH_ITEM_ID          = 46249
--- 紫電の霊砂 の ItemId   GarlandTools 確認済み
-local SAND_ITEM_ID          = 46246
--- 目標数（紫電の霊砂）
-local TARGET_SAND_COUNT     = 99
+------------------------------------------------------------------
+-- Config 読み込み ------------------------------------------------
+------------------------------------------------------------------
+local function cfg(key, fallback)
+    if Config and Config.Get then
+        local ok, v = pcall(Config.Get, key)
+        if ok and v ~= nil then return v end
+    end
+    return fallback
+end
 
--- 使用する餌 ItemId（漁師の釣り餌）  ※要確認
-local BAIT_ITEM_ID          = 29717
+local TARGET_SAND_COUNT    = cfg("target_sand_count", 99)
+local TIME_PER_SPOT_SEC    = cfg("time_per_spot_sec", 900)
+local INVENTORY_FREE_LIMIT = cfg("inventory_free_limit", 1)
+local BAIT_ITEM_ID         = cfg("bait_item_id", 29717)
+local AUTOHOOK_PRESET      = cfg("autohook_preset", "紫の舌先")
+local AETHERYTE_NAME       = cfg("aetheryte_name", "朋友の灯火")
+local USE_FLIGHT           = cfg("use_flight", true)
+local NEEDS_COLLECTABLE    = cfg("needs_collectable", true)
+local DEBUG                = cfg("debug", true)
 
--- AutoHook プリセット名（事前に AutoHook に登録しておく）
-local AUTOHOOK_PRESET       = "紫の舌先"
-
--- 1 ポイントあたりの滞在時間 (秒)
-local TIME_PER_SPOT_SEC     = 900         -- 15 分
-
--- 釣り場 3 箇所
---   aetheryte : Lifestream に渡すエーテライト名（日本語名可）
---   x,y,z     : ワールド座標
---   fly       : 飛行で移動するか
 local FISHING_SPOTS = {
-    { name = "ポイント1", aetheryte = "朋友の灯火",
-      x =   6.215, y =  25.185, z =  24.578, fly = true },
-    { name = "ポイント2", aetheryte = "朋友の灯火",
-      x = -24.975, y =  21.487, z = -58.947, fly = true },
-    { name = "ポイント3", aetheryte = "朋友の灯火",
-      x = 158.372, y =  24.070, z = -17.322, fly = true },
+    { name = "ポイント1",
+      x = cfg("spot1_x",   6.215),
+      y = cfg("spot1_y",  25.185),
+      z = cfg("spot1_z",  24.578) },
+    { name = "ポイント2",
+      x = cfg("spot2_x", -24.975),
+      y = cfg("spot2_y",  21.487),
+      z = cfg("spot2_z", -58.947) },
+    { name = "ポイント3",
+      x = cfg("spot3_x", 158.372),
+      y = cfg("spot3_y",  24.070),
+      z = cfg("spot3_z", -17.322) },
 }
-
--- 紫の舌先は収集品でのみ精選可 → true のまま
-local NEEDS_COLLECTABLE     = true
-
--- インベントリ空きスロットがこの値以下 → 精選へ
-local INVENTORY_FREE_LIMIT  = 1
-
-local DEBUG                 = true
 
 ------------------------------------------------------------------
 -- 定数: CharacterCondition ---------------------------------------
@@ -68,18 +172,6 @@ local COND = {
     casting      = 27,
     fishing      = 43,
     betweenAreas = 45,
-}
-
--- Action IDs（必要な場合は固定IDで直接叩ける。未使用でも保持）
-local ACTION = {
-    cast_fishing   = 289,   -- キャスティング
-    quit_fishing   = 299,   -- おさめる
-}
-
--- GeneralAction IDs
-local GA = {
-    mount_roulette = 9,
-    dismount       = 23,
 }
 
 ------------------------------------------------------------------
@@ -95,11 +187,9 @@ local function wait(sec)
 end
 
 local function cond(id)
-    -- SND 標準: Svc.Condition[id]
     if Svc and Svc.Condition then
         return Svc.Condition[id] == true
     end
-    -- フォールバック（旧 SND）
     if GetCharacterCondition then return GetCharacterCondition(id) end
     return false
 end
@@ -152,26 +242,22 @@ end
 
 local function dismount()
     if not cond(COND.mounted) then return end
-    yield("/gaction \"マウント解除\"")
+    yield('/gaction "マウント解除"')
     wait_until(function() return not cond(COND.mounted) end, 5)
 end
 
 local function move_to(spot)
-    if spot.fly then mount_up() end
+    if USE_FLIGHT then mount_up() end
 
     if IPC and IPC.vnavmesh and IPC.vnavmesh.PathfindAndMoveTo then
-        IPC.vnavmesh.PathfindAndMoveTo({x = spot.x, y = spot.y, z = spot.z}, spot.fly or false)
+        IPC.vnavmesh.PathfindAndMoveTo({x = spot.x, y = spot.y, z = spot.z}, USE_FLIGHT)
         wait_until(function()
             return not IPC.vnavmesh.PathfindInProgress() and not IPC.vnavmesh.IsRunning()
         end, 240)
     else
-        -- フォールバック: /vnav コマンド
-        local cmd = spot.fly and "/vnav flyto " or "/vnav moveto "
+        local cmd = USE_FLIGHT and "/vnav flyto " or "/vnav moveto "
         yield(cmd .. string.format("%.2f %.2f %.2f", spot.x, spot.y, spot.z))
-        wait_until(function()
-            -- 停止判定は距離で（座標APIが無ければ概ね時間で切る）
-            return false
-        end, 240)
+        wait(30)
         yield("/vnav stop")
     end
 
@@ -181,7 +267,7 @@ end
 
 local function goto_spot(spot)
     log("→ " .. spot.name)
-    teleport_to(spot.aetheryte)
+    teleport_to(AETHERYTE_NAME)
     move_to(spot)
 end
 
@@ -190,14 +276,11 @@ end
 ------------------------------------------------------------------
 
 local function setup_rig()
-    -- 餌セット
     yield('/item ' .. tostring(BAIT_ITEM_ID))
     wait(1.5)
-    -- AutoHook プリセット
     yield('/ahset "' .. AUTOHOOK_PRESET .. '"')
     yield("/ahon")
     wait(1)
-    -- 収集品モード
     if NEEDS_COLLECTABLE then
         yield('/ac "収集品採集"')
         wait(1)
@@ -222,7 +305,6 @@ end
 local function fish_at_spot(duration_sec)
     setup_rig()
     local start_t = os.time()
-    -- 初キャスト
     if not cond(COND.fishing) then cast() end
 
     while (os.time() - start_t) < duration_sec do
@@ -232,8 +314,6 @@ local function fish_at_spot(duration_sec)
         if item_count(SAND_ITEM_ID) >= TARGET_SAND_COUNT then
             return "done"
         end
-        -- AutoHook が拾って勝手に合わせ→次キャストに進む想定
-        -- 釣り状態が切れていたら再キャスト
         if not cond(COND.fishing) and not cond(COND.casting) then
             cast()
         end
@@ -256,12 +336,10 @@ local function reduce_all()
     log("精選開始  fish=" .. item_count(FISH_ITEM_ID))
     local safety = 0
     while item_count(FISH_ITEM_ID) > 0 and safety < 500 do
-        -- 精選ウィンドウを開く → 対象アイテムを指定
         yield('/ac "精選"')
         wait(1)
         yield('/item ' .. tostring(FISH_ITEM_ID))
         wait(1)
-        -- 精選演出（キャスト中扱い）
         wait_until(function() return not cond(COND.casting) end, 15)
         wait(0.5)
         safety = safety + 1
