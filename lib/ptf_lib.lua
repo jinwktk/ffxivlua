@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "0f3d9dc"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:49"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "8e7d35a"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:50"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -554,15 +554,15 @@ function PTF.run(opts)
         local free = free_slots()
         local fish = fish_count(FISH_ITEM_ID)
         log(string.format("釣り前チェック  空き=%d 舌先=%d", free, fish))
-        if free <= cfg.inventory_free_limit then
-            if fish > 0 then
-                log("  インベ逼迫 → 釣り前に精選実行")
-                reduce_all()
-            else
-                log("  ERROR: インベ満杯かつ舌先0 → 精選不能のため中断")
-                log("  不要アイテムを整理してから再実行してください")
-                break
-            end
+        if fish > 0 then
+            -- 舌先があれば常に精選してから釣り始める (インベ空きを最大化)
+            log("  舌先あり → 釣り前に精選実行")
+            reduce_all()
+        elseif free <= cfg.inventory_free_limit then
+            -- 空きなし かつ 舌先0 → 精選対象なしで中断
+            log("  ERROR: インベ満杯かつ舌先0 → 精選不能のため中断")
+            log("  不要アイテムを整理してから再実行してください")
+            break
         end
 
         local reason = fish_at_spot(cfg.time_per_spot)
