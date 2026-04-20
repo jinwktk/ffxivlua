@@ -9,7 +9,7 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "43fe7d1"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "af43cf4"                -- AUTO-UPDATED BY HOOK
 local LIB_BUILD   = "2026-04-20 18:11"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
@@ -351,8 +351,8 @@ local function quit_fishing()
             log("  fishing=false 確認 (i=" .. i .. ")")
             break
         end
-        log("  /ac おさめる (" .. i .. ")")
-        yield('/ac おさめる')
+        log("  /ac 中断 (" .. i .. ")")
+        yield('/ac 中断')
         wait_until(function() return not cond(COND.fishing) end, 4)
     end
     -- 念のためキャスティング中も終わるまで待つ
