@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "6f3dd4b"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:04"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "6dc506a"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:06"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -346,14 +346,34 @@ local function move_to(spot)
 end
 
 -- キャラクターを指定座標の方向に向ける (pointToFace)
--- vnav で該当点に一瞬歩き出す → 回頭だけで停止
+-- /vnav moveto で該当点に歩かせ、パス開始を確認してから停止
 local function face_point(fx, fy, fz)
     log(string.format("face_point (%.2f, %.2f, %.2f)", fx, fy, fz))
-    -- 地上移動で回頭させる (飛行だと上昇してしまうので注意)
     yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
-    wait(1)
+
+    -- パス計算開始を待つ (最大3秒)
+    local started = wait_until(function()
+        return pathfind_in_progress() or path_running()
+    end, 3)
+    log("  path開始: " .. tostring(started))
+
+    -- 実際に動き出すまで待つ (計算完了後に Running になる、最大5秒)
+    if started then
+        wait_until(function() return path_running() end, 5)
+        -- 動き出したら 2.5 秒歩かせて (十分に回頭+前進)
+        wait(2.5)
+    else
+        log("  警告: pathが開始しない、座標が到達不能かも")
+        -- フォールバック: IPC 直接呼び出し
+        local pf_mv = safe_get("IPC.vnavmesh.PathfindAndMoveTo")
+        if pf_mv then
+            pcall(pf_mv, {X = fx, Y = fy, Z = fz}, false)
+            wait(3)
+        end
+    end
     yield("/vnav stop")
     wait(0.5)
+    log("  face_point 終了")
 end
 
 local function goto_spot(spot)
@@ -475,6 +495,12 @@ local function reduce_all()
     if n <= 0 then
         log("  紫の舌先 0 → 精選スキップ")
         return
+    end
+
+    -- マウント中は精選不可 → 必ず降りる
+    if cond(COND.mounted) then
+        log("  精選前: マウント解除")
+        dismount()
     end
 
     -- 精選が使えるのは Fisher (Lv60+ 精選解禁後)。GA id は 18 (精選)
