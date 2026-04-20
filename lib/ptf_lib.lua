@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "721a71c"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:59"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "6f3dd4b"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 19:04"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -512,14 +512,14 @@ local function reduce_all()
         wait(1.5)
 
         -- PurifyItemSelector (精選ウィンドウ) で先頭アイテムを選択
-        -- /callback PurifyItemSelector true 12 0
-        -- (真偽 true=show, 12=Reduce アクション, 0=先頭スロット)
-        yield('/callback PurifyItemSelector true 12 0')
-        log("  /callback PurifyItemSelector 12 0 送信")
+        -- /pcall PurifyItemSelector true 12 0
+        -- (true=show, 12=Reduce アクション, 0=先頭スロット)
+        yield('/pcall PurifyItemSelector true 12 0')
+        log("  /pcall PurifyItemSelector 12 0 送信")
         wait(1.5)
 
         -- 精選結果ウィンドウ PurifyResult を閉じる
-        yield('/callback PurifyResult true 0')
+        yield('/pcall PurifyResult true 0')
         wait(1)
 
         -- 精選演出完了まで待機 (cast 条件が落ちる)
