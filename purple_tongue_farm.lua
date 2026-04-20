@@ -110,8 +110,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "99640f0"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 17:57"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "5d8c7d8"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-20 18:06"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -148,17 +148,17 @@ local opts = {
           y = cfg("spot3_y",  24.070),
           z = cfg("spot3_z", -17.322) },
     },
-    main_version = SCRIPT_VERSION,
-    main_build   = SCRIPT_BUILD,
 }
+
+yield(string.format('/echo [PTF] main ver=%s build=%s', SCRIPT_VERSION, SCRIPT_BUILD))
 
 ------------------------------------------------------------------
 -- ライブラリ呼び出し ------------------------------------------
 ------------------------------------------------------------------
 if not _G.PTF then
     yield('/echo [PTF] ERROR: ptf_lib.lua が読み込まれていません')
-    yield('/echo [PTF] SND の Macro Dependencies に下記を追加してください:')
-    yield('/echo [PTF] C:\\Users\\mlove\\Documents\\GitHub\\ffxivlua\\lib\\ptf_lib.lua')
+    yield('/echo [PTF] SND の Macro Dependencies に Local → File で lib/ptf_lib.lua のフルパスを追加してください')
+    yield('/echo [PTF] 終了します')
     return
 end
 

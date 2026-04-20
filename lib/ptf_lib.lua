@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "99640f0"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 17:57"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "5d8c7d8"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:06"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -26,6 +26,7 @@ local COND = {
     casting      = 27,
     fishing      = 43,
     betweenAreas = 45,
+    loadingZone  = 51,  -- 転送中 (betweenAreas と同時に立つ)
 }
 
 ------------------------------------------------------------------
@@ -113,7 +114,8 @@ local function free_slots()
         local ok, v = pcall(fn)
         if ok then return tonumber(v) or 0 end
     end
-    return 35
+    -- API が取れない時は「満杯扱い」で精選側に倒す (取りこぼし防止)
+    return 0
 end
 
 local function wait_until(fn, timeout_sec)
@@ -211,10 +213,14 @@ local function teleport_to(aetheryte)
         yield('/li ' .. aetheryte)
     end
 
-    local started = wait_until(function() return cond(45) or cond(51) end, 10)
+    local started = wait_until(function()
+        return cond(COND.betweenAreas) or cond(COND.loadingZone)
+    end, 10)
     log("  テレポ開始: " .. tostring(started))
     if started then
-        wait_until(function() return not cond(45) and not cond(51) end, 60)
+        wait_until(function()
+            return not cond(COND.betweenAreas) and not cond(COND.loadingZone)
+        end, 60)
         log("  テレポ完了 zoneId=" .. tostring(zone_id()))
         wait(3)
     else
@@ -399,9 +405,18 @@ end
 ------------------------------------------------------------------
 -- エントリポイント -----------------------------------------------
 ------------------------------------------------------------------
+-- ログファイルをクローズ (run 終了時に呼ぶ)
+local function close_log()
+    if _log_file then
+        pcall(function() _log_file:close() end)
+        _log_file = nil
+    end
+end
+
 function PTF.run(opts)
     cfg = opts or {}
     cfg.spots              = cfg.spots              or {}
+    assert(#cfg.spots > 0, "cfg.spots は 1 つ以上必要")
     cfg.target             = cfg.target             or 99
     cfg.time_per_spot      = cfg.time_per_spot      or 900
     cfg.inventory_free_limit = cfg.inventory_free_limit or 1
@@ -432,8 +447,12 @@ function PTF.run(opts)
         idx = idx % #cfg.spots + 1
     end
     log("完了: sand=" .. item_count(SAND_ITEM_ID))
+    close_log()
 end
 
--- SND の Lua は return で module 返し、_G 経由でも拾えるように両対応
+-- 外部からもクローズ可能に
+PTF.close = close_log
+
+-- SND の File Dependency は毎回ロードするため、常に最新を _G.PTF に入れる
 _G.PTF = PTF
 return PTF
