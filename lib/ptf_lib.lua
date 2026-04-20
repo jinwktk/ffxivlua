@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "c408a62"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:53"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "8e1537b"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:56"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -498,11 +498,11 @@ local function reduce_all()
             break
         end
 
-        -- 精選アクション発動 (GA=18 or /ac 精選)
+        -- 精選アクション発動 (GA=21 が精選) → だめなら /ac 精選 フォールバック
         local opened = false
         if exec_ga then
-            local ok = pcall(exec_ga, 18)
-            log("  Actions.ExecuteGeneralAction(18) ok=" .. tostring(ok))
+            local ok = pcall(exec_ga, 21)
+            log("  Actions.ExecuteGeneralAction(21) ok=" .. tostring(ok))
             opened = ok
         end
         if not opened then
