@@ -1,0 +1,10 @@
+{
+  "active": true,
+  "started_at": "2026-04-20T07:21:39.414Z",
+  "original_prompt": "ulw Somethingneeddoing用のluaスクリプトを組んでほしいです。\n\n紫の舌先を釣る。インベントリがいっぱいになったら精選する。\n紫電の霊砂を指定数集める。\n3個ほど座標をとり、一定時間たったら移動するようにする。\n\n上記のスクリプトを組んでほしい。\n\n参考にしてほしいものも貼っておきます。\nhttps://github.com/lycopersicon-esculentum/ffxiv-snd-scripts\nhttps://github.com/pot0to/pot0to-SND-Scripts/\nhttps://github.com/Jaksuhn/SomethingNeedDoing\n\n日本語で使いたいので、必要な情報があれば聞いてください。",
+  "session_id": "adacf023-9269-41cd-b5b9-9062b7963d3c",
+  "project_path": "C:\\Users\\mlove\\Documents\\GitHub\\ffxivlua",
+  "reinforcement_count": 0,
+  "awaiting_confirmation": true,
+  "last_checked_at": "2026-04-20T07:21:39.415Z"
+}
