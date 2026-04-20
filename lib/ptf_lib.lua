@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "4368c4c"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 18:42"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "a1d7ce8"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-20 18:44"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -510,6 +510,17 @@ function PTF.run(opts)
     local idx = 1
     while item_count(SAND_ITEM_ID) < cfg.target do
         goto_spot(cfg.spots[idx])
+
+        -- 釣り開始前のインベントリ空きチェック:
+        -- 既に空きが限界 and 舌先を持っているなら、先に精選してから釣る
+        local free = free_slots()
+        local fish = item_count(FISH_ITEM_ID)
+        log(string.format("釣り前チェック  空き=%d 舌先=%d", free, fish))
+        if free <= cfg.inventory_free_limit and fish > 0 then
+            log("  インベ逼迫 → 釣り前に精選実行")
+            reduce_all()
+        end
+
         local reason = fish_at_spot(cfg.time_per_spot)
         stop_fishing()
         if reason == "inv_full" then reduce_all()
