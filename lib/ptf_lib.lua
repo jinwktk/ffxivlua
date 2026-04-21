@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "cf8a69a"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-22 03:36"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "b6e8b1f"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 03:38"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -266,16 +266,26 @@ end
 
 local function mount_up()
     if cond(COND.mounted) then return true end
-    -- ハードガード 1: FSM 状態で釣り/精選中はマウント禁止
+    -- ハードガード: FSM 状態で釣り/精選中はマウント禁止。FSM を唯一の源として扱う。
+    -- (cond.fishing は AutoHook 残骸で起動時から立ちっぱなしのケースがあるため
+    -- ゲーム条件での判定は採用しない)
     if _state == STATE.FISHING or _state == STATE.PURIFYING then
         log(string.format("  (guard) mount_up 拒否 state=%s", _state))
         return false
     end
-    -- ハードガード 2: 実際のゲーム状態でも釣り/キャスト中はマウント禁止
-    -- (FSM が追従していない場合の安全網)
+    -- 念のため釣りが残っていたら止めてからマウント (FSM が TRAVELING / AT_SPOT でも
+    -- 実状態として cond.fishing=true なら先にクリア)
     if cond(COND.fishing) or cond(COND.casting) then
-        log("  (guard) mount_up 拒否 (fishing/casting アクティブ)")
-        return false
+        log("  (recover) fishing/casting が残っている → /ahoff + /ac 中断")
+        yield("/ahoff")
+        wait(0.3)
+        for i = 1, 3 do
+            if not cond(COND.fishing) and not cond(COND.casting) then break end
+            yield('/ac 中断')
+            wait_until(function()
+                return not cond(COND.fishing) and not cond(COND.casting)
+            end, 2)
+        end
     end
     log("マウント: /mount ウィング・オブ・ミスト")
     yield('/mount ウィング・オブ・ミスト')
@@ -651,15 +661,25 @@ local function reopen_purify_window()
 end
 
 local function reduce_all()
-    -- ハードガード: 釣り/キャスト中は精選しない (FSM + ゲーム状態の両面チェック)
+    -- ハードガード: FSM が釣り中の場合のみ実行拒否。
+    -- cond.fishing だけで拒否すると AutoHook 残骸で起動時に精選できなくなるため
+    -- FSM を唯一の源として扱う。必要なら呼び出し側で stop_fishing() を先に行う。
     if _state == STATE.FISHING then
         log("  (guard) reduce_all 拒否 state=FISHING")
         return
     end
+    -- 念のため: 実際にゲーム側で釣り/キャスト中なら先にクリア
     if cond(COND.fishing) or cond(COND.casting) then
-        log("  (guard) reduce_all 拒否 (fishing/casting アクティブ)")
-        -- 釣り中に呼ばれた場合はまず釣りを止める
-        return
+        log("  (recover) reduce_all 前に fishing/casting 残存 → /ahoff + /ac 中断")
+        yield("/ahoff")
+        wait(0.3)
+        for i = 1, 3 do
+            if not cond(COND.fishing) and not cond(COND.casting) then break end
+            yield('/ac 中断')
+            wait_until(function()
+                return not cond(COND.fishing) and not cond(COND.casting)
+            end, 2)
+        end
     end
 
     local n = fish_count(FISH_ITEM_ID)
@@ -830,6 +850,23 @@ function PTF.run(opts)
     log(string.format("設定 aetheryte=%s bait=%s preset=%s target=%d time=%d",
         cfg.aetheryte, tostring(cfg.bait), cfg.autohook_preset,
         cfg.target, cfg.time_per_spot))
+
+    -- 起動時クリーンアップ: 前回セッションの残骸 (AutoHook ON / 釣り中 / 精選画面) を一掃
+    log("起動時クリーンアップ")
+    yield("/ahoff")
+    wait(0.3)
+    if cond(COND.fishing) or cond(COND.casting) then
+        for i = 1, 3 do
+            if not cond(COND.fishing) and not cond(COND.casting) then break end
+            log("  前回の釣りが残存 → /ac 中断")
+            yield('/ac 中断')
+            wait_until(function()
+                return not cond(COND.fishing) and not cond(COND.casting)
+            end, 3)
+        end
+    end
+    close_stale_addons()
+    _state = STATE.IDLE  -- 明示的に初期化
 
     -- 精選を実行すべきか判定
     -- 原則: 「インベ空きが少ない」か「舌先を一定数以上持っている」場合のみ精選
