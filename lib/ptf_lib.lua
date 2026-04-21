@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "877ef7f"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 13:10"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "22207bb"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 13:14"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -296,13 +296,34 @@ local function move_to(spot)
 end
 
 -- 指定座標の方向に向ける (pointToFace)
--- 歩いてしまうと水際から離れる可能性があるので、向きだけ変えてすぐ停止
+-- IPC.vnavmesh.MoveTo (直接移動、pathfind せず) を試してダメなら /vnav moveto
 local function face_point(fx, fy, fz)
     log(string.format("face (%.1f,%.1f,%.1f)", fx, fy, fz))
-    yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
-    -- 向きを変えるのに必要な最小時間だけ待つ
-    if wait_until(path_running, 1.5) then
-        wait(0.4)  -- 向きが固まるまで (歩くのは最小限)
+
+    -- 1st: IPC.vnavmesh.MoveTo (vectorList, fly?) 直接呼び出し
+    local move_to = safe_get("IPC.vnavmesh.MoveTo")
+    local pf_mv   = safe_get("IPC.vnavmesh.PathfindAndMoveTo")
+    local started = false
+    if move_to then
+        local ok, err = pcall(move_to, {{X = fx, Y = fy, Z = fz}}, false)
+        log("  IPC.vnavmesh.MoveTo ok=" .. tostring(ok) .. " err=" .. tostring(err))
+        started = ok
+    end
+    if not started and pf_mv then
+        local ok, err = pcall(pf_mv, {X = fx, Y = fy, Z = fz}, false)
+        log("  IPC.vnavmesh.PathfindAndMoveTo ok=" .. tostring(ok) .. " err=" .. tostring(err))
+        started = ok
+    end
+    if not started then
+        yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
+    end
+
+    -- 動き出したら短時間だけ歩かせて (回頭主眼、水際から離れない)
+    if wait_until(function() return path_running() end, 2) then
+        wait(0.3)
+        log("  回頭完了")
+    else
+        log("  path開始せず、向き未変更の可能性")
     end
     yield("/vnav stop")
     wait(0.2)
