@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "4150829"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 13:02"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "30957a9"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 13:07"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -295,16 +295,16 @@ local function move_to(spot)
 end
 
 -- 指定座標の方向に向ける (pointToFace)
+-- 歩いてしまうと水際から離れる可能性があるので、向きだけ変えてすぐ停止
 local function face_point(fx, fy, fz)
     log(string.format("face (%.1f,%.1f,%.1f)", fx, fy, fz))
     yield(string.format("/vnav moveto %.2f %.2f %.2f", fx, fy, fz))
-    -- パス開始を最大2秒で確認し、動き出したら1.8秒で向きが固まる
-    if wait_until(vnav_busy, 2) then
-        wait(1.8)
-    else
-        log("  path開始せず")
+    -- 向きを変えるのに必要な最小時間だけ待つ
+    if wait_until(path_running, 1.5) then
+        wait(0.4)  -- 向きが固まるまで (歩くのは最小限)
     end
     yield("/vnav stop")
+    wait(0.2)
 end
 
 local function goto_spot(spot)
