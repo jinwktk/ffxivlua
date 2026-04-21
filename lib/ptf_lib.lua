@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "e839b71"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 14:13"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "1b9ad2b"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 14:33"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -494,6 +494,8 @@ local function reduce_all()
 
     local safety = 0
     local prev_fish = n
+    local stuck = 0
+    local max_stuck = 8   -- 連続減らず回数の閾値 (ゲーム側反応遅延に余裕)
     while safety < 500 do
         local cur_fish = fish_count(FISH_ITEM_ID)
         log(string.format("  iter=%d fish=%d sand=%d", safety, cur_fish, item_count(SAND_ITEM_ID)))
@@ -548,19 +550,22 @@ local function reduce_all()
 
         -- 精選演出完了まで待機 (cast 条件が落ちる)
         wait_until(function() return not cond(COND.casting) end, 15)
-        wait(0.5)
+        -- インベントリ更新が反映されるまで余裕を持って待つ
+        wait(1.5)
 
-        -- 前回から減っていなければ異常
+        -- 進捗判定: 魚数が減らない場合はリトライ、ただし連続N回まで許容
         local new_fish = fish_count(FISH_ITEM_ID)
         if new_fish >= prev_fish then
-            log(string.format("  ※減っていない fish=%d→%d", prev_fish, new_fish))
-            if safety >= 3 then
-                log("  3回以上減少せず → 精選打ち切り")
+            stuck = stuck + 1
+            log(string.format("  減少せず %d/%d (fish=%d)", stuck, max_stuck, new_fish))
+            if stuck >= max_stuck then
+                log("  N回連続減らず → 精選打ち切り")
                 break
             end
+        else
+            stuck = 0  -- 減ったらカウンタリセット
         end
         prev_fish = new_fish
-
         safety = safety + 1
     end
     -- ループ終了後、PurifyResult が残っていれば閉じる
@@ -647,8 +652,12 @@ function PTF.run(opts)
 
         local reason = fish_at_spot(cfg.time_per_spot)
         stop_fishing()
-        if reason == "inv_full" then reduce_all()
-        elseif reason == "done" then break end
+        -- 舌先が残っていれば常に精選 (理由を問わない)
+        if fish_count(FISH_ITEM_ID) > 0 then
+            log("  釣り後: 舌先あり → 精選実行")
+            reduce_all()
+        end
+        if reason == "done" then break end
         idx = idx % #cfg.spots + 1
     end
     log("完了: sand=" .. item_count(SAND_ITEM_ID))
