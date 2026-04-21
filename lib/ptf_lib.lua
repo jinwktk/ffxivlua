@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "3064890"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 19:14"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "6010004"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 02:54"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -36,6 +36,29 @@ local PTF = {}
 
 -- ランタイム設定 (run() で opts から注入される)
 local cfg = {}
+
+------------------------------------------------------------------
+-- 状態機械 (FSM) ------------------------------------------------
+------------------------------------------------------------------
+-- 明示的に現在のフェーズを持ち、状態遷移をログに残す。
+-- これにより「釣り中のはずなのにマウント/精選している」のような
+-- 不整合を検出しやすくする。
+local STATE = {
+    IDLE      = "idle",       -- 何もしていない / 初期状態
+    TRAVELING = "traveling",  -- テレポ / 飛行 / 地上移動中
+    AT_SPOT   = "at_spot",    -- 釣り位置到着 & セットアップ前
+    FISHING   = "fishing",    -- キャスト〜ヒット〜AutoHook ループ中
+    PURIFYING = "purifying",  -- 精選ウィンドウ操作中
+}
+local _state = STATE.IDLE
+local function set_state(s)
+    if _state == s then return end
+    -- log は後方で定義されるため、pcall で安全化
+    local msg = string.format("[state] %s → %s", _state, s)
+    pcall(function() log(msg) end)
+    _state = s
+end
+local function in_state(s) return _state == s end
 
 ------------------------------------------------------------------
 -- ログ (ファイル + /echo) ---------------------------------------
@@ -242,17 +265,37 @@ local function teleport_to(aetheryte)
 end
 
 local function mount_up()
-    if cond(COND.mounted) then return end
+    if cond(COND.mounted) then return true end
     log("マウント: /mount ウィング・オブ・ミスト")
     yield('/mount ウィング・オブ・ミスト')
-    wait_until(function() return cond(COND.mounted) end, 8)
+    local ok = wait_until(function() return cond(COND.mounted) end, 8)
+    if not ok then log("  警告: マウント失敗 (戦闘中/釣り中/Job制限?)") end
+    return ok
 end
 
 local function dismount()
-    if not cond(COND.mounted) then return end
+    if not cond(COND.mounted) then return true end
     local fn = safe_get("Actions.ExecuteGeneralAction")
     if fn then pcall(fn, 23) else yield('/gaction マウント解除') end
-    wait_until(function() return not cond(COND.mounted) end, 4)
+    local ok = wait_until(function() return not cond(COND.mounted) end, 4)
+    if not ok then log("  警告: マウント解除失敗") end
+    return ok
+end
+
+-- ガード: fly=true で移動する前に必ずマウント済みにする。
+-- IPC.vnavmesh.PathfindAndMoveTo(dest, true) / /vnav flyto は
+-- マウント前提のため、ここで invariant を満たす。
+local function ensure_mount_for_fly(fly)
+    if not fly then return true end
+    if cond(COND.mounted) then return true end
+    return mount_up()
+end
+
+-- ガード: 釣り/精選/キャスト前に必ずマウント解除
+local function ensure_dismounted(reason)
+    if not cond(COND.mounted) then return true end
+    log("  (invariant) マウント解除 理由=" .. tostring(reason))
+    return dismount()
 end
 
 local function wait_arrival(spot, timeout_sec)
@@ -276,7 +319,9 @@ local function wait_arrival(spot, timeout_sec)
 end
 
 -- 任意座標への移動ヘルパー (到達判定用)
+-- fly=true の場合、呼び出し前にマウント必須。ここでも再度 invariant を satisfy する。
 local function move_to_point(tx, ty, tz, fly, timeout)
+    if fly then ensure_mount_for_fly(true) end
     local cmdv = fly and "/vnav flyto " or "/vnav moveto "
     yield(cmdv .. string.format("%.2f %.2f %.2f", tx, ty, tz))
     local fake = { x = tx, y = ty, z = tz }
@@ -285,33 +330,55 @@ local function move_to_point(tx, ty, tz, fly, timeout)
     return arrived
 end
 
+-- 近距離なら飛行せず地上歩きにする閾値 (座標単位 ~ m)
+local SHORT_HOP_THRESHOLD = 30.0
+
 local function move_to(spot)
+    set_state(STATE.TRAVELING)
+
     -- 既に釣り位置にいる?
     local d = distance_to(spot.x, spot.y, spot.z)
     if d and d <= 5.0 then
         log(string.format("到着済 d=%.1f", d))
+        ensure_dismounted("到着済")
+        return
+    end
+
+    -- 近距離なら飛行/マウント自体スキップ → 無駄なマウント乗降を削減
+    if d and d <= SHORT_HOP_THRESHOLD then
+        log(string.format("近距離 d=%.1f → 地上歩きのみ", d))
+        ensure_dismounted("近距離移動")
+        local ok = move_to_point(spot.x, spot.y, spot.z, false, 60)
+        if not ok then log("  warn: 近距離移動 未到達") end
         return
     end
 
     -- landing が設定されているなら「①飛んで landing」「②降車」「③地上歩きで釣り場」
     if spot.landing then
         log("→ landing (飛行)")
-        if cfg.use_flight then mount_up() end
-        local ok_land = move_to_point(spot.landing.x, spot.landing.y, spot.landing.z, cfg.use_flight, 240)
+        if cfg.use_flight then
+            -- invariant: fly の前に必ずマウント
+            if not ensure_mount_for_fly(true) then
+                log("  マウント不可 → 地上歩きにフォールバック")
+            end
+        end
+        local ok_land = move_to_point(spot.landing.x, spot.landing.y, spot.landing.z,
+            cfg.use_flight and cond(COND.mounted), 240)
         if not ok_land then log("  warn: landing 未到達") end
 
-        log("  マウント解除")
-        dismount()
+        -- 釣り位置へは必ず地上歩き
+        ensure_dismounted("landing到着")
 
         log("→ 釣り位置 (地上)")
         local ok_spot = move_to_point(spot.x, spot.y, spot.z, false, 60)
         if not ok_spot then log("  warn: 釣り位置 未到達") end
     else
         -- landing なしなら従来動作
-        if cfg.use_flight then mount_up() end
-        local arrived = move_to_point(spot.x, spot.y, spot.z, cfg.use_flight, 240)
+        if cfg.use_flight then ensure_mount_for_fly(true) end
+        local arrived = move_to_point(spot.x, spot.y, spot.z,
+            cfg.use_flight and cond(COND.mounted), 240)
         if not arrived then log("警告: 到達タイムアウト") end
-        dismount()
+        ensure_dismounted("スポット到着")
     end
 end
 
@@ -351,6 +418,7 @@ end
 
 local function goto_spot(spot)
     log("→ " .. spot.name)
+    set_state(STATE.TRAVELING)
     teleport_to(cfg.aetheryte)
     move_to(spot)
 
@@ -358,11 +426,9 @@ local function goto_spot(spot)
     local f = spot.face or cfg.face
     if f then face_point(f.x, f.y, f.z) end
 
-    -- キャスト前にマウントを必ず降りる
-    if cond(COND.mounted) then
-        log("キャスト前にマウント解除")
-        dismount()
-    end
+    -- キャスト前にマウントを必ず降りる (invariant)
+    ensure_dismounted("キャスト前")
+    set_state(STATE.AT_SPOT)
 end
 
 ------------------------------------------------------------------
@@ -406,8 +472,59 @@ local function setup_rig()
     end
 end
 
+-- Addon が実際に表示されているか判定する。
+-- 重要: Addons.GetAddon はウィンドウが閉じていてもオブジェクトを返すので、
+-- 「オブジェクト取得=表示中」と見なすのは誤り。必ず Ready/IsVisible/Visible を検査する。
+-- 返り値: true=表示中, false=非表示, nil=判定不能
+local function addon_visible(name)
+    -- 1) 明示的にブール値を返す API を優先
+    for _, path in ipairs({
+        "IsAddonReady", "IsAddonVisible",
+        "Addons.IsAddonReady", "Addons.IsAddonVisible",
+    }) do
+        local fn = safe_get(path)
+        if fn then
+            local ok, v = pcall(fn, name)
+            if ok and type(v) == "boolean" then return v end
+        end
+    end
+    -- 2) フォールバック: GetAddon で Ready/IsVisible/Visible フィールドを明示検査
+    local get_fn = safe_get("Addons.GetAddon")
+    if get_fn then
+        local ok, v = pcall(get_fn, name)
+        if ok then
+            if v == nil then return false end
+            if type(v) == "table" or type(v) == "userdata" then
+                local ready = safe_index(v, "Ready")
+                local vis   = safe_index(v, "IsVisible")
+                local vis2  = safe_index(v, "Visible")
+                if ready ~= nil then return ready == true end
+                if vis   ~= nil then return vis   == true end
+                if vis2  ~= nil then return vis2  == true end
+                -- 明示的な可視フラグが無い場合は判定不能
+                return nil
+            end
+        end
+    end
+    return nil  -- 判定不能
+end
+
+-- キャスト前にゴミ addon (精選残骸など) が開いていたら閉じる
+local function close_stale_addons()
+    if addon_visible("PurifyResult") then
+        yield('/callback PurifyResult true 0')
+        wait(0.3)
+    end
+    if addon_visible("PurifyItemSelector") then
+        yield('/callback PurifyItemSelector true -1')  -- キャンセル
+        wait(0.3)
+    end
+end
+
 local function cast()
-    if cond(COND.mounted) then dismount() end
+    -- invariant: マウント解除 & 残存 UI クローズ
+    ensure_dismounted("cast前")
+    close_stale_addons()
     yield('/ac キャスティング')
     wait(1)
 end
@@ -447,6 +564,7 @@ end
 local function fish_at_spot(duration_sec)
     log("fish_at_spot 開始 duration=" .. duration_sec)
     _G.PTF_fish_sense = false  -- スポット開始時にリセット
+    set_state(STATE.FISHING)
     setup_rig()
     local start_t = os.time()
     log("  fishing条件: " .. tostring(cond(COND.fishing)))
@@ -455,6 +573,12 @@ local function fish_at_spot(duration_sec)
     local cast_failures = 0
 
     while (os.time() - start_t) < duration_sec do
+        -- invariant: 釣り中にマウントされたら即解除 (不意の操作混入を防ぐ)
+        if cond(COND.mounted) then
+            log("  警告: 釣り中にマウント検知 → 強制解除")
+            ensure_dismounted("fish_at_spot 中マウント異常")
+        end
+
         -- 魚に警戒されたメッセージが来ていれば即座にスポット変更
         if fish_sense_triggered() then
             log("  魚に警戒された → 次のポイントへ")
@@ -495,6 +619,23 @@ local function stop_fishing()
     quit_fishing()
 end
 
+-- 精選ウィンドウを強制的に「閉じた → 新規に開き直す」状態に遷移させる。
+-- 目的: 表示判定が不安定でも確実にフレッシュな状態で callback を撃てるようにする。
+local function reopen_purify_window()
+    -- 1) 残骸 UI を閉じる
+    close_stale_addons()
+    wait(0.3)
+    -- 2) /ac 精選 でオープン
+    log("  精選ウィンドウ オープン (/ac 精選)")
+    yield('/ac 精選')
+    -- 3) 表示まで待機 (判定不能時もタイムアウトで抜けて進む)
+    wait_until(function() return addon_visible("PurifyItemSelector") == true end, 3)
+    wait(0.6)
+    local vis = addon_visible("PurifyItemSelector")
+    log("  PurifyItemSelector visible=" .. tostring(vis))
+    return vis ~= false  -- true or nil (判定不能) を成功扱い
+end
+
 local function reduce_all()
     local n = fish_count(FISH_ITEM_ID)
     log("精選開始 fish=" .. n)
@@ -503,66 +644,23 @@ local function reduce_all()
         return
     end
 
-    -- マウント中は精選不可 → 必ず降りる
-    if cond(COND.mounted) then
-        log("  精選前: マウント解除")
-        dismount()
-    end
+    set_state(STATE.PURIFYING)
 
-    -- 精選が使えるのは Fisher (Lv60+ 精選解禁後)。GA id は 18 (精選)
+    -- invariant: マウント中は精選不可
+    ensure_dismounted("精選前")
+
     local use_item = safe_get("Inventory.UseItem")
     local exec_ga  = safe_get("Actions.ExecuteGeneralAction")
     log(string.format("  API check Inventory.UseItem=%s Actions.ExecuteGeneralAction=%s",
         tostring(type(use_item)), tostring(type(exec_ga))))
 
-    -- Addon 可視性チェック (複数API試行)
-    local function addon_visible(name)
-        for _, path in ipairs({
-            "Addons.GetAddon", "Addons.IsAddonReady", "Addons.IsAddonVisible",
-            "IsAddonVisible", "IsAddonReady",
-        }) do
-            local fn = safe_get(path)
-            if fn then
-                local ok, v = pcall(fn, name)
-                if ok then
-                    if type(v) == "boolean" then return v end
-                    if type(v) == "table" or type(v) == "userdata" then
-                        local vis = safe_index(v, "Ready")
-                                 or safe_index(v, "IsVisible")
-                                 or safe_index(v, "Visible")
-                        if vis ~= nil then return vis == true end
-                        return true  -- オブジェクト取得=表示中とみなす
-                    end
-                end
-            end
-        end
-        return nil  -- 判定不能
-    end
-
-    local function ensure_purify_open()
-        if addon_visible("PurifyItemSelector") then return true end
-        -- トグルではなく /ac 精選 で安全にアクション発動
-        log("  精選ウィンドウ 再オープン (/ac 精選)")
-        yield('/ac 精選')
-        return wait_until(function()
-            return addon_visible("PurifyItemSelector") == true
-        end, 3) or addon_visible("PurifyItemSelector") ~= false
-    end
-
-    -- 精選ウィンドウを最初に開く
-    -- 既に開いてる場合 /ac 精選 はノーオペなので安全
-    if not addon_visible("PurifyItemSelector") then
-        log("精選ウィンドウ オープン (/ac 精選)")
-        yield('/ac 精選')
-        wait(1.5)
-    else
-        log("精選ウィンドウは既に表示済")
-    end
+    -- 毎回フレッシュに開き直す (前回の残骸が残っていると callback が空振る)
+    reopen_purify_window()
 
     local safety = 0
     local prev_fish = n
     local stuck = 0
-    local max_stuck = 8
+    local max_stuck = 3  -- 8→3 に短縮 (スタックしたら即リセット)
     while safety < 500 do
         local cur_fish = fish_count(FISH_ITEM_ID)
         log(string.format("  iter=%d fish=%d sand=%d", safety, cur_fish, item_count(SAND_ITEM_ID)))
@@ -576,42 +674,79 @@ local function reduce_all()
             break
         end
 
-        -- 毎ループ、ウィンドウが閉じていれば再オープン
-        local vis = addon_visible("PurifyItemSelector")
-        log("  PurifyItemSelector visible=" .. tostring(vis))
-        if vis == false then
-            ensure_purify_open()
+        -- 前回の精選結果ダイアログが残っていれば閉じる (閉じないと次の callback が効かない)
+        if addon_visible("PurifyResult") == true then
+            log("  PurifyResult を閉じる")
+            yield('/callback PurifyResult true 0')
             wait(0.5)
         end
 
+        -- 選択ウィンドウが開いているか確認。閉じていたら再オープン
+        local vis = addon_visible("PurifyItemSelector")
+        if vis == false then
+            log("  PurifyItemSelector 閉じていた → 再オープン")
+            if not reopen_purify_window() then
+                log("  警告: 精選ウィンドウ再オープン失敗 → 打ち切り")
+                break
+            end
+        end
+
+        -- 精選アクション発動
         yield('/callback PurifyItemSelector true 12 0')
         log("  /callback PurifyItemSelector true 12 0")
-        wait(1.2)
+        wait(1.0)
 
         -- 精選演出完了まで待機 (cast 条件が落ちる)
         wait_until(function() return not cond(COND.casting) end, 15)
-        -- インベントリ更新が反映されるまで余裕を持って待つ
-        wait(1.5)
+        wait(0.8)
 
-        -- 進捗判定: 魚数が減らない場合はリトライ、ただし連続N回まで許容
+        -- 結果ダイアログが出たら必ず閉じる (次の iter で呼ぶ前に片付ける)
+        if addon_visible("PurifyResult") == true then
+            yield('/callback PurifyResult true 0')
+            wait(0.5)
+        end
+
+        -- 進捗判定
         local new_fish = fish_count(FISH_ITEM_ID)
         if new_fish >= prev_fish then
             stuck = stuck + 1
             log(string.format("  減少せず %d/%d (fish=%d)", stuck, max_stuck, new_fish))
             if stuck >= max_stuck then
-                log("  N回連続減らず → 精選打ち切り")
-                break
+                -- 完全リセットを1度試み、それでもダメなら打ち切り
+                log("  進捗なし → 完全リセットして再試行")
+                close_stale_addons()
+                wait(0.5)
+                if not reopen_purify_window() then
+                    log("  リセット後もウィンドウ開けず → 打ち切り")
+                    break
+                end
+                -- リセット後に改めて 1 回試行してもダメなら打ち切り
+                yield('/callback PurifyItemSelector true 12 0')
+                wait(1.0)
+                wait_until(function() return not cond(COND.casting) end, 15)
+                wait(0.8)
+                if addon_visible("PurifyResult") == true then
+                    yield('/callback PurifyResult true 0')
+                    wait(0.5)
+                end
+                local retry_fish = fish_count(FISH_ITEM_ID)
+                if retry_fish >= prev_fish then
+                    log("  リセット後も減らず → 打ち切り")
+                    break
+                end
+                prev_fish = retry_fish
+                stuck = 0
             end
         else
-            stuck = 0  -- 減ったらカウンタリセット
+            stuck = 0
+            prev_fish = new_fish
         end
-        prev_fish = new_fish
         safety = safety + 1
     end
-    -- ループ終了後、PurifyResult が残っていれば閉じる
-    yield('/callback PurifyResult true 0')
-    wait(0.5)
+    -- クリーンアップ
+    close_stale_addons()
     log("精選完了 fish=" .. fish_count(FISH_ITEM_ID) .. " sand=" .. item_count(SAND_ITEM_ID))
+    set_state(STATE.AT_SPOT)
 end
 
 ------------------------------------------------------------------
@@ -671,6 +806,19 @@ function PTF.run(opts)
         cfg.aetheryte, tostring(cfg.bait), cfg.autohook_preset,
         cfg.target, cfg.time_per_spot))
 
+    -- 精選を実行すべきか判定
+    -- 原則: 「インベ空きが少ない」か「舌先を一定数以上持っている」場合のみ精選
+    -- これにより毎スポット移動ごとの「マウント→精選→マウント」を減らす
+    local function should_purify(reason)
+        local fish = fish_count(FISH_ITEM_ID)
+        if fish <= 0 then return false end
+        if reason == "inv_full" then return true end
+        if free_slots() <= cfg.inventory_free_limit + 2 then return true end
+        -- 舌先が溜まっていれば実益があるので精選
+        if fish >= 10 then return true end
+        return false
+    end
+
     local idx = 1
     while item_count(SAND_ITEM_ID) < cfg.target do
         goto_spot(cfg.spots[idx])
@@ -679,28 +827,32 @@ function PTF.run(opts)
         local free = free_slots()
         local fish = fish_count(FISH_ITEM_ID)
         log(string.format("釣り前チェック  空き=%d 舌先=%d", free, fish))
-        if fish > 0 then
-            -- 舌先があれば常に精選してから釣り始める (インベ空きを最大化)
-            log("  舌先あり → 釣り前に精選実行")
-            reduce_all()
-        elseif free <= cfg.inventory_free_limit then
-            -- 空きなし かつ 舌先0 → 精選対象なしで中断
+        if free <= cfg.inventory_free_limit and fish <= 0 then
             log("  ERROR: インベ満杯かつ舌先0 → 精選不能のため中断")
             log("  不要アイテムを整理してから再実行してください")
             break
         end
+        if should_purify("pre_fish") then
+            log("  → 釣り前に精選実行")
+            reduce_all()
+        else
+            log("  → 精選はスキップ (空き十分 or 舌先少)")
+        end
 
         local reason = fish_at_spot(cfg.time_per_spot)
         stop_fishing()
-        -- 舌先が残っていれば常に精選 (理由を問わない)
-        if fish_count(FISH_ITEM_ID) > 0 then
-            log("  釣り後: 舌先あり → 精選実行")
+
+        if should_purify(reason) then
+            log("  釣り後: 精選実行 reason=" .. tostring(reason))
             reduce_all()
+        else
+            log("  釣り後: 精選スキップ (空き十分) reason=" .. tostring(reason))
         end
         if reason == "done" then break end
         idx = idx % #cfg.spots + 1
     end
     log("完了: sand=" .. item_count(SAND_ITEM_ID))
+    set_state(STATE.IDLE)
     close_log()
 end
 
