@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "1b9ad2b"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 14:33"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "84cbf0e"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 15:00"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -492,10 +492,19 @@ local function reduce_all()
     log(string.format("  API check Inventory.UseItem=%s Actions.ExecuteGeneralAction=%s",
         tostring(type(use_item)), tostring(type(exec_ga))))
 
+    -- 精選ウィンドウを「最初に1回だけ」開く (GA 21 はトグル動作)
+    log("精選ウィンドウ オープン")
+    if exec_ga then
+        pcall(exec_ga, 21)
+    else
+        yield('/ac 精選')
+    end
+    wait(1.5)
+
     local safety = 0
     local prev_fish = n
     local stuck = 0
-    local max_stuck = 8   -- 連続減らず回数の閾値 (ゲーム側反応遅延に余裕)
+    local max_stuck = 8
     while safety < 500 do
         local cur_fish = fish_count(FISH_ITEM_ID)
         log(string.format("  iter=%d fish=%d sand=%d", safety, cur_fish, item_count(SAND_ITEM_ID)))
@@ -509,44 +518,10 @@ local function reduce_all()
             break
         end
 
-        -- 精選アクション発動 (GA=21 が精選) → だめなら /ac 精選 フォールバック
-        local opened = false
-        if exec_ga then
-            local ok = pcall(exec_ga, 21)
-            log("  Actions.ExecuteGeneralAction(21) ok=" .. tostring(ok))
-            opened = ok
-        end
-        if not opened then
-            yield('/ac 精選')
-            log("  /ac 精選 送信")
-        end
-        wait(1.5)
-
-        -- PurifyItemSelector が表示されるのを待ってから callback
-        local ok_visible = wait_until(function()
-            local fn = safe_get("Addons.GetAddon")
-                    or safe_get("Addons.IsAddonVisible")
-                    or safe_get("IsAddonVisible")
-            if fn then
-                local ok, v = pcall(fn, "PurifyItemSelector")
-                if ok then
-                    if type(v) == "boolean" then return v end
-                    if type(v) == "table" or type(v) == "userdata" then
-                        local vis = safe_index(v, "Ready") or safe_index(v, "IsVisible")
-                        if vis ~= nil then return vis == true end
-                        return true   -- 取れたら表示されてるとみなす
-                    end
-                end
-            end
-            -- 取得不能時は条件で代替 (精選演出 = casting)
-            return false
-        end, 5)
-        log("  PurifyItemSelector visible=" .. tostring(ok_visible))
-
-        -- 表示されなくてもとりあえず callback を送ってみる
+        -- ウィンドウは開きっぱなし。callback だけ送り続ける。
         yield('/callback PurifyItemSelector true 12 0')
-        log("  /callback PurifyItemSelector true 12 0 送信")
-        wait(1.5)
+        log("  /callback PurifyItemSelector true 12 0")
+        wait(1.2)
 
         -- 精選演出完了まで待機 (cast 条件が落ちる)
         wait_until(function() return not cond(COND.casting) end, 15)
