@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "2853feb"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 17:42"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "3064890"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 19:14"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -427,8 +427,26 @@ local function quit_fishing()
     log("  fishing=" .. tostring(cond(COND.fishing)))
 end
 
+-- 「魚に警戒されてしまった」メッセージ検知用フラグ
+-- 外部 (SND Trigger Events / OnChatMessage) から _G.PTF_fish_sense = true で設定
+-- ・設定方法の例 (SND 別マクロで):
+--     function OnChatMessage()
+--       local m = TriggerData and TriggerData.message or ""
+--       if m:find("魚たちに警戒") or m:find("少し場所を変え") then
+--         _G.PTF_fish_sense = true
+--       end
+--     end
+local function fish_sense_triggered()
+    if _G.PTF_fish_sense then
+        _G.PTF_fish_sense = false
+        return true
+    end
+    return false
+end
+
 local function fish_at_spot(duration_sec)
     log("fish_at_spot 開始 duration=" .. duration_sec)
+    _G.PTF_fish_sense = false  -- スポット開始時にリセット
     setup_rig()
     local start_t = os.time()
     log("  fishing条件: " .. tostring(cond(COND.fishing)))
@@ -437,6 +455,11 @@ local function fish_at_spot(duration_sec)
     local cast_failures = 0
 
     while (os.time() - start_t) < duration_sec do
+        -- 魚に警戒されたメッセージが来ていれば即座にスポット変更
+        if fish_sense_triggered() then
+            log("  魚に警戒された → 次のポイントへ")
+            return "fish_sense"
+        end
         if free_slots() <= cfg.inventory_free_limit
            and fish_count(FISH_ITEM_ID) > 0 then
             return "inv_full"
@@ -446,9 +469,10 @@ local function fish_at_spot(duration_sec)
         if not cond(COND.fishing) and not cond(COND.casting) then
             cast()
             local ok = wait_until(function()
+                if fish_sense_triggered() then return true end
                 return cond(COND.fishing) or cond(COND.casting)
             end, 5)
-            if not ok then
+            if _G.PTF_fish_sense == false and not ok then
                 cast_failures = cast_failures + 1
                 log(string.format("  キャスト失敗 %d/%d (釣り場外の可能性)",
                     cast_failures, max_cast_failures))
@@ -456,7 +480,7 @@ local function fish_at_spot(duration_sec)
                     log("  → 次のポイントへ移動")
                     return "no_fish_spot"
                 end
-            else
+            elseif ok then
                 cast_failures = 0
             end
         end
