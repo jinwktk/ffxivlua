@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "84cbf0e"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 15:00"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "bd0660b"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 17:08"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -135,14 +135,13 @@ local function item_count(id)
     return call_api_num("Inventory.GetItemCount", 0, id)
 end
 
--- 収集品 (HQ / collectable) を含めた総数
+-- 収集品の紫の舌先のみカウント (精選対象はコレクタブルだけ)
+-- Inventory.GetCollectableItemCount(id, minQuality=1) が最優先
 local function fish_count(id)
-    local total = item_count(id)
-    local hq = call_api_num("Inventory.GetItemCount", nil, id, true)
-    if hq and hq > total then total = hq end
-    total = total + (call_api_num("Inventory.GetCollectableItemCount", 0, id, 1) or 0)
-    total = total + (call_api_num("Inventory.GetHQItemCount", 0, id) or 0)
-    return total
+    local c = call_api_num("Inventory.GetCollectableItemCount", nil, id, 1)
+    if c ~= nil then return c end
+    -- フォールバック: GetCollectableItemCount が使えない環境では 0 扱い
+    return 0
 end
 
 local function free_slots()
