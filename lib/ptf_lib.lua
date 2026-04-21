@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "22207bb"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 13:14"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "e839b71"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 14:13"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -276,23 +276,44 @@ local function wait_arrival(spot, timeout_sec)
     return false
 end
 
+-- 任意座標への移動ヘルパー (到達判定用)
+local function move_to_point(tx, ty, tz, fly, timeout)
+    local cmdv = fly and "/vnav flyto " or "/vnav moveto "
+    yield(cmdv .. string.format("%.2f %.2f %.2f", tx, ty, tz))
+    local fake = { x = tx, y = ty, z = tz }
+    local arrived = wait_arrival(fake, timeout or 240)
+    yield("/vnav stop")
+    return arrived
+end
+
 local function move_to(spot)
+    -- 既に釣り位置にいる?
     local d = distance_to(spot.x, spot.y, spot.z)
     if d and d <= 5.0 then
         log(string.format("到着済 d=%.1f", d))
         return
     end
 
-    if cfg.use_flight then mount_up() end
+    -- landing が設定されているなら「①飛んで landing」「②降車」「③地上歩きで釣り場」
+    if spot.landing then
+        log("→ landing (飛行)")
+        if cfg.use_flight then mount_up() end
+        local ok_land = move_to_point(spot.landing.x, spot.landing.y, spot.landing.z, cfg.use_flight, 240)
+        if not ok_land then log("  warn: landing 未到達") end
 
-    local cmdv = cfg.use_flight and "/vnav flyto " or "/vnav moveto "
-    yield(cmdv .. string.format("%.2f %.2f %.2f", spot.x, spot.y, spot.z))
+        log("  マウント解除")
+        dismount()
 
-    local arrived = wait_arrival(spot, 240)
-    yield("/vnav stop")
-    if not arrived then log("警告: 到達タイムアウト") end
-
-    dismount()
+        log("→ 釣り位置 (地上)")
+        local ok_spot = move_to_point(spot.x, spot.y, spot.z, false, 60)
+        if not ok_spot then log("  warn: 釣り位置 未到達") end
+    else
+        -- landing なしなら従来動作
+        if cfg.use_flight then mount_up() end
+        local arrived = move_to_point(spot.x, spot.y, spot.z, cfg.use_flight, 240)
+        if not arrived then log("警告: 到達タイムアウト") end
+        dismount()
+    end
 end
 
 -- 指定座標の方向に向ける (pointToFace)
