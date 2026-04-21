@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "16a4dd6"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 13:00"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "4150829"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 13:02"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -341,12 +341,11 @@ end
 
 local function ensure_fisher()
     if is_fisher() then return true end
-    local gs = cfg.fisher_gearset or 1
-    log(string.format("漁師以外 → /gearset change %d", gs))
-    yield('/gearset change ' .. tostring(gs))
+    log("漁師以外 → /gearset change FSH")
+    yield('/gearset change FSH')
     local ok = wait_until(is_fisher, 6)
     if not ok then
-        log("  警告: 漁師に切替失敗 (gearset=" .. gs .. " を確認)")
+        log("  警告: 漁師に切替失敗 (FSH のギアセットを登録してください)")
     end
     return ok
 end
