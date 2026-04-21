@@ -56,6 +56,13 @@ configs:
     default: true
     type: bool
     required: true
+  fisher_gearset:
+    default: 1
+    description: 漁師のギアセット番号 (/gearset change N)
+    type: int
+    min: 1
+    max: 100
+    required: true
 [[End Metadata]]
 --]=====]
 
@@ -74,8 +81,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "60ddab6"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-20 19:28"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "16a4dd6"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-21 13:00"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -98,6 +105,7 @@ local opts = {
     use_flight          = cfg("use_flight", true),
     needs_collectable   = cfg("needs_collectable", true),
     debug               = cfg("debug", true),
+    fisher_gearset      = cfg("fisher_gearset", 1),
     -- 釣り場座標はスクリプト内に直接記述
     spots = {
         { name = "ポイント1", x = 202.19057, y = 128.03957, z = -13.55115 },

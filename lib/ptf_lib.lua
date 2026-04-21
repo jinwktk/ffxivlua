@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "60ddab6"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-20 19:28"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "16a4dd6"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 13:00"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -56,9 +56,16 @@ local function _open_log()
     return false
 end
 
-local function log(msg)
+-- Dalamud ロガー (Log / LogDebug / LogVerbose を試す)
+local function _dalamud_log(msg, level)
+    level = level or "Log"
+    local fn = safe_get("Dalamud." .. level) or safe_get("Dalamud.Log")
+    if fn then pcall(fn, msg) end
+end
+
+local function log(msg, level)
     local line = "[PTF] " .. tostring(msg)
-    if cfg.debug then yield("/echo " .. line) end
+    if cfg.debug then _dalamud_log(line, level or "Log") end
     if _open_log() then
         pcall(function()
             _log_file:write(os.date("%H:%M:%S ") .. line .. "\n")
@@ -66,6 +73,10 @@ local function log(msg)
         end)
     end
 end
+
+-- ヘルパー (log(msg, "LogVerbose") 等の短縮)
+local function log_debug(msg)   log(msg, "LogDebug")   end
+local function log_verbose(msg) log(msg, "LogVerbose") end
 
 local function wait(sec) yield("/wait " .. tostring(sec)) end
 
@@ -315,7 +326,33 @@ end
 ------------------------------------------------------------------
 -- 釣り / 精選 ----------------------------------------------------
 ------------------------------------------------------------------
+-- 現在のクラスが漁師 (FSH=18) か判定
+local function is_fisher()
+    local p = player_obj()
+    if not p then return false end
+    local cj = safe_index(p, "ClassJob")
+    if not cj then return false end
+    -- ClassJob は LazyRow 構造が多く .RowId / .Id / .Value.RowId を試す
+    local id = safe_index(cj, "RowId")
+               or safe_index(cj, "Id")
+               or (safe_index(cj, "Value") and safe_index(safe_index(cj, "Value"), "RowId"))
+    return id == 18
+end
+
+local function ensure_fisher()
+    if is_fisher() then return true end
+    local gs = cfg.fisher_gearset or 1
+    log(string.format("漁師以外 → /gearset change %d", gs))
+    yield('/gearset change ' .. tostring(gs))
+    local ok = wait_until(is_fisher, 6)
+    if not ok then
+        log("  警告: 漁師に切替失敗 (gearset=" .. gs .. " を確認)")
+    end
+    return ok
+end
+
 local function setup_rig()
+    ensure_fisher()
     log(string.format("setup_rig bait=%s preset=%s", tostring(cfg.bait), cfg.autohook_preset))
     yield('/bait ' .. tostring(cfg.bait))
     wait(0.8)
