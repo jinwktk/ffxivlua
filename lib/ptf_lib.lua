@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "bd0660b"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 17:08"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "89c4cf3"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 17:17"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -491,13 +491,42 @@ local function reduce_all()
     log(string.format("  API check Inventory.UseItem=%s Actions.ExecuteGeneralAction=%s",
         tostring(type(use_item)), tostring(type(exec_ga))))
 
-    -- 精選ウィンドウを「最初に1回だけ」開く (GA 21 はトグル動作)
-    log("精選ウィンドウ オープン")
-    if exec_ga then
-        pcall(exec_ga, 21)
-    else
-        yield('/ac 精選')
+    -- Addon 可視性チェック (複数API試行)
+    local function addon_visible(name)
+        for _, path in ipairs({
+            "Addons.GetAddon", "Addons.IsAddonReady", "Addons.IsAddonVisible",
+            "IsAddonVisible", "IsAddonReady",
+        }) do
+            local fn = safe_get(path)
+            if fn then
+                local ok, v = pcall(fn, name)
+                if ok then
+                    if type(v) == "boolean" then return v end
+                    if type(v) == "table" or type(v) == "userdata" then
+                        local vis = safe_index(v, "Ready")
+                                 or safe_index(v, "IsVisible")
+                                 or safe_index(v, "Visible")
+                        if vis ~= nil then return vis == true end
+                        return true  -- オブジェクト取得=表示中とみなす
+                    end
+                end
+            end
+        end
+        return nil  -- 判定不能
     end
+
+    local function ensure_purify_open()
+        if addon_visible("PurifyItemSelector") then return true end
+        log("  精選ウィンドウ 再オープン")
+        if exec_ga then pcall(exec_ga, 21) else yield('/ac 精選') end
+        return wait_until(function()
+            return addon_visible("PurifyItemSelector") == true
+        end, 3) or addon_visible("PurifyItemSelector") ~= false
+    end
+
+    -- 精選ウィンドウを最初に開く
+    log("精選ウィンドウ オープン")
+    if exec_ga then pcall(exec_ga, 21) else yield('/ac 精選') end
     wait(1.5)
 
     local safety = 0
@@ -517,7 +546,14 @@ local function reduce_all()
             break
         end
 
-        -- ウィンドウは開きっぱなし。callback だけ送り続ける。
+        -- 毎ループ、ウィンドウが閉じていれば再オープン
+        local vis = addon_visible("PurifyItemSelector")
+        log("  PurifyItemSelector visible=" .. tostring(vis))
+        if vis == false then
+            ensure_purify_open()
+            wait(0.5)
+        end
+
         yield('/callback PurifyItemSelector true 12 0')
         log("  /callback PurifyItemSelector true 12 0")
         wait(1.2)
