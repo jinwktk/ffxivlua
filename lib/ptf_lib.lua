@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "89c4cf3"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 17:17"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "2853feb"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 17:42"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -517,17 +517,23 @@ local function reduce_all()
 
     local function ensure_purify_open()
         if addon_visible("PurifyItemSelector") then return true end
-        log("  精選ウィンドウ 再オープン")
-        if exec_ga then pcall(exec_ga, 21) else yield('/ac 精選') end
+        -- トグルではなく /ac 精選 で安全にアクション発動
+        log("  精選ウィンドウ 再オープン (/ac 精選)")
+        yield('/ac 精選')
         return wait_until(function()
             return addon_visible("PurifyItemSelector") == true
         end, 3) or addon_visible("PurifyItemSelector") ~= false
     end
 
     -- 精選ウィンドウを最初に開く
-    log("精選ウィンドウ オープン")
-    if exec_ga then pcall(exec_ga, 21) else yield('/ac 精選') end
-    wait(1.5)
+    -- 既に開いてる場合 /ac 精選 はノーオペなので安全
+    if not addon_visible("PurifyItemSelector") then
+        log("精選ウィンドウ オープン (/ac 精選)")
+        yield('/ac 精選')
+        wait(1.5)
+    else
+        log("精選ウィンドウは既に表示済")
+    end
 
     local safety = 0
     local prev_fish = n
