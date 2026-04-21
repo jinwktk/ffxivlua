@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "6010004"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-22 02:54"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "cf8a69a"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 03:36"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -266,6 +266,17 @@ end
 
 local function mount_up()
     if cond(COND.mounted) then return true end
+    -- ハードガード 1: FSM 状態で釣り/精選中はマウント禁止
+    if _state == STATE.FISHING or _state == STATE.PURIFYING then
+        log(string.format("  (guard) mount_up 拒否 state=%s", _state))
+        return false
+    end
+    -- ハードガード 2: 実際のゲーム状態でも釣り/キャスト中はマウント禁止
+    -- (FSM が追従していない場合の安全網)
+    if cond(COND.fishing) or cond(COND.casting) then
+        log("  (guard) mount_up 拒否 (fishing/casting アクティブ)")
+        return false
+    end
     log("マウント: /mount ウィング・オブ・ミスト")
     yield('/mount ウィング・オブ・ミスト')
     local ok = wait_until(function() return cond(COND.mounted) end, 8)
@@ -617,6 +628,9 @@ local function stop_fishing()
     yield("/ahoff")
     wait(0.5)
     quit_fishing()
+    -- FSM を AT_SPOT に戻す。これをしないと後続の reduce_all が FISHING 判定で拒否される。
+    -- quit_fishing() 内で fishing=false を待機済みなので安全。
+    set_state(STATE.AT_SPOT)
 end
 
 -- 精選ウィンドウを強制的に「閉じた → 新規に開き直す」状態に遷移させる。
@@ -637,6 +651,17 @@ local function reopen_purify_window()
 end
 
 local function reduce_all()
+    -- ハードガード: 釣り/キャスト中は精選しない (FSM + ゲーム状態の両面チェック)
+    if _state == STATE.FISHING then
+        log("  (guard) reduce_all 拒否 state=FISHING")
+        return
+    end
+    if cond(COND.fishing) or cond(COND.casting) then
+        log("  (guard) reduce_all 拒否 (fishing/casting アクティブ)")
+        -- 釣り中に呼ばれた場合はまず釣りを止める
+        return
+    end
+
     local n = fish_count(FISH_ITEM_ID)
     log("精選開始 fish=" .. n)
     if n <= 0 then
