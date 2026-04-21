@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "30957a9"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-21 13:07"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "877ef7f"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-21 13:10"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -56,29 +56,9 @@ local function _open_log()
     return false
 end
 
--- Dalamud ロガー (Log / LogDebug / LogVerbose を試す)
-local function _dalamud_log(msg, level)
-    level = level or "Log"
-    local fn = safe_get("Dalamud." .. level) or safe_get("Dalamud.Log")
-    if fn then pcall(fn, msg) end
-end
-
-local function log(msg, level)
-    local line = "[PTF] " .. tostring(msg)
-    if cfg.debug then _dalamud_log(line, level or "Log") end
-    if _open_log() then
-        pcall(function()
-            _log_file:write(os.date("%H:%M:%S ") .. line .. "\n")
-            _log_file:flush()
-        end)
-    end
-end
-
--- ヘルパー (log(msg, "LogVerbose") 等の短縮)
-local function log_debug(msg)   log(msg, "LogDebug")   end
-local function log_verbose(msg) log(msg, "LogVerbose") end
-
 local function wait(sec) yield("/wait " .. tostring(sec)) end
+
+-- log / _dalamud_log は safe_get 定義後 (下の SND API ユーティリティ内) で定義する
 
 ------------------------------------------------------------------
 -- SND API アクセスユーティリティ --------------------------------
@@ -102,6 +82,27 @@ local function safe_get(path)
     end
     return obj
 end
+
+-- Dalamud ロガー (safe_get 定義後に配置)
+local function _dalamud_log(msg, level)
+    level = level or "Log"
+    local fn = safe_get("Dalamud." .. level) or safe_get("Dalamud.Log")
+    if fn then pcall(fn, msg) end
+end
+
+local function log(msg, level)
+    local line = "[PTF] " .. tostring(msg)
+    if cfg.debug then _dalamud_log(line, level or "Log") end
+    if _open_log() then
+        pcall(function()
+            _log_file:write(os.date("%H:%M:%S ") .. line .. "\n")
+            _log_file:flush()
+        end)
+    end
+end
+
+local function log_debug(msg)   log(msg, "LogDebug")   end
+local function log_verbose(msg) log(msg, "LogVerbose") end
 
 local function cond(id)
     local svc = rawget(_G, "Svc")
