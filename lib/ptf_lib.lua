@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "de712fa"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-22 03:45"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "0baebc5"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 20:22"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -319,19 +319,24 @@ local function ensure_dismounted(reason)
     return dismount()
 end
 
-local function wait_arrival(spot, timeout_sec)
+-- 到着判定。arrival_radius 以下で「到着」、vnav 停止時は stuck_radius で打ち切り判定。
+-- 釣り位置のように水面に面する精度が必要な場合は arrival_radius を小さく指定する。
+local function wait_arrival(spot, timeout_sec, arrival_radius, stuck_radius)
+    arrival_radius = arrival_radius or 3.0
+    stuck_radius   = stuck_radius   or 8.0
     local t, step, last_log = 0, 0.5, 0
     while t < timeout_sec do
         local d = distance_to(spot.x, spot.y, spot.z)
         if t - last_log >= 5 then
-            log(string.format("  移動中 d=%s busy=%s",
-                d and string.format("%.1f", d) or "?", tostring(vnav_busy())))
+            log(string.format("  移動中 d=%s busy=%s target_r=%.1f",
+                d and string.format("%.2f", d) or "?",
+                tostring(vnav_busy()), arrival_radius))
             last_log = t
         end
-        if d and d <= 3.0 then return true end
+        if d and d <= arrival_radius then return true end
         -- vnav 停止 + 起動から 3 秒経過 で到着/スタック判定
         if t > 3 and not vnav_busy() then
-            return d and d <= 8.0
+            return d and d <= stuck_radius
         end
         yield("/wait " .. step)
         t = t + step
@@ -339,16 +344,42 @@ local function wait_arrival(spot, timeout_sec)
     return false
 end
 
--- 任意座標への移動ヘルパー (到達判定用)
--- fly=true の場合、呼び出し前にマウント必須。ここでも再度 invariant を satisfy する。
-local function move_to_point(tx, ty, tz, fly, timeout)
+-- 任意座標への移動ヘルパー。
+-- arrival_radius: 成功扱いにする距離 (未指定なら 3.0)
+-- stuck_radius:   vnav 停止時に success 扱いに許す最大距離 (未指定なら 8.0)
+local function move_to_point(tx, ty, tz, fly, timeout, arrival_radius, stuck_radius)
     if fly then ensure_mount_for_fly(true) end
     local cmdv = fly and "/vnav flyto " or "/vnav moveto "
     yield(cmdv .. string.format("%.2f %.2f %.2f", tx, ty, tz))
     local fake = { x = tx, y = ty, z = tz }
-    local arrived = wait_arrival(fake, timeout or 240)
+    local arrived = wait_arrival(fake, timeout or 240, arrival_radius, stuck_radius)
     yield("/vnav stop")
     return arrived
+end
+
+-- 釣り位置への厳密移動。水面に面させるため 1.5m 以内まで追い込む。
+-- vnav が途中で諦めたら最大 max_retries 回まで再度 moveto を叩き直す。
+local function move_to_fishing_point(tx, ty, tz, max_retries)
+    max_retries = max_retries or 3
+    local target_r = 1.5  -- 釣り位置の到着半径 (厳密)
+    local stuck_r  = 2.5  -- vnav 停止時でもこれ以下なら成功扱い
+    for attempt = 1, max_retries do
+        local d = distance_to(tx, ty, tz)
+        if d and d <= target_r then
+            log(string.format("  釣り位置到達 d=%.2f (attempt=%d)", d, attempt))
+            return true
+        end
+        log(string.format("  釣り位置移動 attempt=%d/%d 現在d=%s",
+            attempt, max_retries,
+            d and string.format("%.2f", d) or "?"))
+        move_to_point(tx, ty, tz, false, 60, target_r, stuck_r)
+        wait(0.3)
+    end
+    local d = distance_to(tx, ty, tz)
+    local ok = d and d <= stuck_r
+    log(string.format("  釣り位置リトライ終了 最終d=%s %s",
+        d and string.format("%.2f", d) or "?", ok and "OK" or "NG"))
+    return ok
 end
 
 -- 近距離なら飛行せず地上歩きにする閾値 (座標単位 ~ m)
@@ -357,10 +388,10 @@ local SHORT_HOP_THRESHOLD = 30.0
 local function move_to(spot)
     set_state(STATE.TRAVELING)
 
-    -- 既に釣り位置にいる?
+    -- 既に釣り位置にいる? (厳密: 1.5m 以内のみ到着済扱い)
     local d = distance_to(spot.x, spot.y, spot.z)
-    if d and d <= 5.0 then
-        log(string.format("到着済 d=%.1f", d))
+    if d and d <= 1.5 then
+        log(string.format("到着済 d=%.2f", d))
         ensure_dismounted("到着済")
         return
     end
@@ -369,8 +400,7 @@ local function move_to(spot)
     if d and d <= SHORT_HOP_THRESHOLD then
         log(string.format("近距離 d=%.1f → 地上歩きのみ", d))
         ensure_dismounted("近距離移動")
-        local ok = move_to_point(spot.x, spot.y, spot.z, false, 60)
-        if not ok then log("  warn: 近距離移動 未到達") end
+        move_to_fishing_point(spot.x, spot.y, spot.z, 3)
         return
     end
 
@@ -383,23 +413,25 @@ local function move_to(spot)
                 log("  マウント不可 → 地上歩きにフォールバック")
             end
         end
+        -- landing は多少ズレてもOK (arrival_r=3.0, stuck_r=8.0 デフォルト)
         local ok_land = move_to_point(spot.landing.x, spot.landing.y, spot.landing.z,
             cfg.use_flight and cond(COND.mounted), 240)
         if not ok_land then log("  warn: landing 未到達") end
 
-        -- 釣り位置へは必ず地上歩き
+        -- 釣り位置へは必ず地上歩き、かつ厳密に追い込む
         ensure_dismounted("landing到着")
 
-        log("→ 釣り位置 (地上)")
-        local ok_spot = move_to_point(spot.x, spot.y, spot.z, false, 60)
-        if not ok_spot then log("  warn: 釣り位置 未到達") end
+        log("→ 釣り位置 (地上、厳密)")
+        move_to_fishing_point(spot.x, spot.y, spot.z, 3)
     else
-        -- landing なしなら従来動作
+        -- landing なしなら飛んで直接、その後 dismount して釣り位置へ厳密移動
         if cfg.use_flight then ensure_mount_for_fly(true) end
         local arrived = move_to_point(spot.x, spot.y, spot.z,
             cfg.use_flight and cond(COND.mounted), 240)
         if not arrived then log("警告: 到達タイムアウト") end
         ensure_dismounted("スポット到着")
+        -- マウント降下後、水際まで厳密に歩く
+        move_to_fishing_point(spot.x, spot.y, spot.z, 3)
     end
 end
 
@@ -540,6 +572,118 @@ local function close_stale_addons()
         yield('/callback PurifyItemSelector true -1')  -- キャンセル
         wait(0.3)
     end
+    if addon_visible("Repair") then
+        yield('/callback Repair true -1')
+        wait(0.3)
+    end
+    if addon_visible("SelectYesno") then
+        yield('/callback SelectYesno true 1')  -- No (安全側)
+        wait(0.3)
+    end
+end
+
+------------------------------------------------------------------
+-- 装備耐久チェック & 自己修理 -----------------------------------
+------------------------------------------------------------------
+-- 装備耐久の最低値を % (0-100) で取得。取得不能時は nil。
+-- SND のバージョンにより API 名が異なるため複数試す。
+local function min_equipment_condition()
+    -- Pattern A: Inventory.GetEquippedItem(slot).Condition  (0-30000 の raw 値)
+    local get_eq = safe_get("Inventory.GetEquippedItem")
+    if get_eq then
+        local min_pct = 101.0
+        local any = false
+        -- 主手/副手/防具: 0..12 を総当たり (0:MainHand,1:OffHand,2:Head,3:Body,4:Hands,5:Waist(廃止),6:Legs,7:Feet,8..12:アクセ)
+        for slot = 0, 12 do
+            local ok, item = pcall(get_eq, slot)
+            if ok and item ~= nil then
+                local c = safe_index(item, "Condition")
+                if c == nil then c = safe_index(item, "Durability") end
+                if c ~= nil then
+                    local raw = tonumber(c)
+                    if raw then
+                        local pct
+                        if raw > 100 then pct = raw / 300.0 else pct = raw end
+                        if pct < min_pct then min_pct = pct end
+                        any = true
+                    end
+                end
+            end
+        end
+        if any then return min_pct end
+    end
+    -- Pattern B: Player オブジェクト側 (未実装 SND もある)
+    local lp = player_obj()
+    if lp then
+        local eq = safe_index(lp, "EquippedItems") or safe_index(lp, "Equipment")
+        if type(eq) == "table" or type(eq) == "userdata" then
+            -- 省略 (Pattern A で取れない環境は手動運用)
+        end
+    end
+    return nil
+end
+
+-- 自己修理を試みる。threshold_pct を下回ったら実行。
+-- 釣り中でも安全に呼ぶために内部で状態をクリアする。
+local function try_repair_gear(threshold_pct)
+    if not cfg.auto_repair then return end
+    threshold_pct = threshold_pct or cfg.repair_threshold_pct or 20
+    local min_c = min_equipment_condition()
+    if min_c == nil then
+        log("  修理: 耐久API取得不可 → スキップ (初回のみ警告)")
+        return
+    end
+    log(string.format("  装備耐久 最低=%.0f%% (閾値 %d%%)", min_c, threshold_pct))
+    if min_c > threshold_pct then return end
+
+    log(string.format("  ★ 自己修理実行 (耐久 %.0f%% ≤ %d%%)", min_c, threshold_pct))
+
+    -- 釣り中なら先に止める
+    if _state == STATE.FISHING or cond(COND.fishing) or cond(COND.casting) then
+        log("  修理前: 釣り/キャストを停止")
+        yield("/ahoff")
+        wait(0.3)
+        for i = 1, 3 do
+            if not cond(COND.fishing) and not cond(COND.casting) then break end
+            yield('/ac 中断')
+            wait_until(function()
+                return not cond(COND.fishing) and not cond(COND.casting)
+            end, 2)
+        end
+        set_state(STATE.AT_SPOT)
+    end
+    ensure_dismounted("修理前")
+    close_stale_addons()
+
+    yield('/ac 自己修理')
+    local opened = wait_until(function()
+        return addon_visible("Repair") == true
+    end, 5)
+    if not opened then
+        log("  警告: Repair ウィンドウが開かなかった")
+        log("  (自己修理アクションを習得しているか、Dark Matter があるか確認)")
+        return
+    end
+    wait(0.5)
+
+    -- Repair ウィンドウの「まとめて修理」ボタン
+    yield('/callback Repair true 0')
+    if wait_until(function() return addon_visible("SelectYesno") == true end, 3) then
+        wait(0.3)
+        yield('/callback SelectYesno true 0')  -- Yes
+    end
+    -- 修理アニメーション待ち
+    wait_until(function() return not cond(COND.casting) end, 15)
+    wait(1.0)
+
+    -- Repair ウィンドウを閉じる
+    if addon_visible("Repair") == true then
+        yield('/callback Repair true -1')
+        wait(0.3)
+    end
+
+    local new_min = min_equipment_condition()
+    log(string.format("  修理後 最低耐久=%s%%", new_min and string.format("%.0f", new_min) or "?"))
 end
 
 local function cast()
@@ -837,6 +981,8 @@ function PTF.run(opts)
     cfg.use_flight         = cfg.use_flight ~= false
     cfg.needs_collectable  = cfg.needs_collectable ~= false
     cfg.debug              = cfg.debug ~= false
+    cfg.auto_repair        = cfg.auto_repair ~= false     -- 既定 true
+    cfg.repair_threshold_pct = cfg.repair_threshold_pct or 20
     -- 共通 pointToFace (すべてのスポットで同じ方角を向かせる場合)
     -- cfg.face = {x=..., y=..., z=...} が渡されれば採用、なければ個別 spot.face のみ
     cfg.face               = cfg.face
@@ -884,6 +1030,9 @@ function PTF.run(opts)
     local idx = 1
     while item_count(SAND_ITEM_ID) < cfg.target do
         goto_spot(cfg.spots[idx])
+
+        -- 装備耐久チェック (閾値以下なら自己修理)
+        try_repair_gear(cfg.repair_threshold_pct)
 
         -- 釣り開始前のインベントリ空きチェック
         local free = free_slots()

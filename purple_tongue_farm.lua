@@ -52,6 +52,18 @@ configs:
     default: true
     type: bool
     required: true
+  auto_repair:
+    default: true
+    description: 装備耐久が閾値を下回ったら自己修理を実行する (要 自己修理アクション + Dark Matter)
+    type: bool
+    required: true
+  repair_threshold_pct:
+    default: 20
+    description: 装備耐久の最低値 (%) がこの値以下で修理を発動
+    type: int
+    min: 1
+    max: 99
+    required: true
   debug:
     default: true
     type: bool
@@ -74,8 +86,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "de712fa"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-22 03:45"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "0baebc5"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-22 20:22"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -97,6 +109,8 @@ local opts = {
     aetheryte           = cfg("aetheryte_name", "朋友の灯火"),
     use_flight          = cfg("use_flight", true),
     needs_collectable   = cfg("needs_collectable", true),
+    auto_repair         = cfg("auto_repair", true),
+    repair_threshold_pct = cfg("repair_threshold_pct", 20),
     debug               = cfg("debug", true),
     -- 釣り場座標: landing=マウント解除用の地上ポイント、x/y/z=実際の釣り位置
     spots = {

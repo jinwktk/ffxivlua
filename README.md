@@ -38,10 +38,12 @@ SND のマクロ画面 → **Macro Dependencies** → **Add New Dependency** →
 - `bait_item_id` / `autohook_preset`(紫の舌先) / `aetheryte_name`(朋友の灯火)
 - 3点の `spot1_x/y/z` 〜 `spot3_x/y/z`
 - `use_flight` / `needs_collectable` / `debug`
+- `auto_repair`(true) / `repair_threshold_pct`(20) — 自己修理の有効化と閾値(%)
 
 ### 4. 実行
 - 漁師でログイン、インベントリを空ける
 - AutoHook で指定プリセットを事前作成
+- 自己修理を有効にする場合は **自己修理アクション習得 + Dark Matter を携帯**
 - SND でマクロを実行
 
 ## バージョン識別
