@@ -54,22 +54,20 @@ configs:
     required: true
   auto_repair:
     default: true
-    description: 定期的に Repair ウィンドウを開いて自己修理を試みる (要 自己修理アクション + Dark Matter)
+    description: 装備耐久が閾値を下回ったら自己修理 (GA 6) を実行 (要 Dark Matter Cluster ItemId 33916)
     type: bool
     required: true
   repair_threshold_pct:
     default: 20
-    description: (未使用/将来用) 耐久API対応時の閾値 %
+    description: 耐久%この値未満の装備が1件以上あれば修理を発動
     type: int
     min: 1
     max: 99
     required: true
-  repair_interval_sec:
-    default: 1800
-    description: 自己修理トライの最低間隔 (秒)。既定 1800 = 30 分。
-    type: int
-    min: 60
-    max: 14400
+  extract_materia:
+    default: true
+    description: 錬精度100%装備を自動マテリア化 (GA 14, 要アクション習得)
+    type: bool
     required: true
   debug:
     default: true
@@ -93,8 +91,8 @@ configs:
 ------------------------------------------------------------------
 -- バージョン識別 (git pre-commit hook で自動置換される) ---------
 ------------------------------------------------------------------
-local SCRIPT_VERSION = "5a5b9e8"                -- AUTO-UPDATED BY HOOK
-local SCRIPT_BUILD   = "2026-04-22 20:28"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_VERSION = "db3f3d9"                -- AUTO-UPDATED BY HOOK
+local SCRIPT_BUILD   = "2026-04-22 20:33"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- Config 読み込み ----------------------------------------------
@@ -118,7 +116,7 @@ local opts = {
     needs_collectable   = cfg("needs_collectable", true),
     auto_repair         = cfg("auto_repair", true),
     repair_threshold_pct = cfg("repair_threshold_pct", 20),
-    repair_interval_sec = cfg("repair_interval_sec", 1800),
+    extract_materia     = cfg("extract_materia", true),
     debug               = cfg("debug", true),
     -- 釣り場座標: landing=マウント解除用の地上ポイント、x/y/z=実際の釣り位置
     spots = {

@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "5a5b9e8"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-22 20:28"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "db3f3d9"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 20:33"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -24,10 +24,14 @@ local SAND_ITEM_ID = 46246  -- 紫電の霊砂
 local COND = {
     mounted      = 4,
     casting      = 27,
+    occupied_mr  = 39,  -- マテリア抽出/修理中
     fishing      = 43,
     betweenAreas = 45,
     loadingZone  = 51,  -- 転送中 (betweenAreas と同時に立つ)
 }
+
+-- Dark Matter Cluster (G8) ItemId
+local DARK_MATTER_ITEM_ID = 33916
 
 ------------------------------------------------------------------
 -- PTF モジュール -------------------------------------------------
@@ -576,6 +580,14 @@ local function close_stale_addons()
         yield('/callback Repair true -1')
         wait(0.3)
     end
+    if addon_visible("Materialize") then
+        yield('/callback Materialize true -1')
+        wait(0.3)
+    end
+    if addon_visible("MaterializeDialog") then
+        yield('/callback MaterializeDialog true 1')  -- No (安全側)
+        wait(0.3)
+    end
     if addon_visible("SelectYesno") then
         yield('/callback SelectYesno true 1')  -- No (安全側)
         wait(0.3)
@@ -583,28 +595,31 @@ local function close_stale_addons()
 end
 
 ------------------------------------------------------------------
--- 自己修理 (時間ベース throttle) --------------------------------
+-- 修理 / マテリア抽出 -------------------------------------------
 ------------------------------------------------------------------
--- 耐久API が無い環境向け。定期的に Repair ウィンドウを開き、
--- 「Yes/No」ダイアログの出現を修理要否の判定に使う。
-local _last_repair_attempt = 0   -- os.time() の値
+-- 耐久が threshold_pct 未満の装備が 1 件以上あるか判定
+local function needs_repair(threshold_pct)
+    local fn = safe_get("Inventory.GetItemsInNeedOfRepairs")
+    if not fn then return false, 0 end
+    local ok, list = pcall(fn, threshold_pct)
+    if not ok or list == nil then return false, 0 end
+    local c = tonumber(safe_index(list, "Count")) or 0
+    return c > 0, c
+end
 
-local function try_repair_gear()
-    if not cfg.auto_repair then return end
+-- 錬精度 100% で抽出可能な装備の数
+local function spiritbonded_count()
+    local fn = safe_get("Inventory.GetSpiritbondedItems")
+    if not fn then return 0 end
+    local ok, list = pcall(fn)
+    if not ok or list == nil then return 0 end
+    return tonumber(safe_index(list, "Count")) or 0
+end
 
-    local now = os.time()
-    local interval = cfg.repair_interval_sec or 1800   -- 30 分
-    if (now - _last_repair_attempt) < interval then
-        -- まだ前回から短時間 → スキップ
-        return
-    end
-    _last_repair_attempt = now
-
-    log(string.format("★ 定期修理トライ (間隔 %d 秒)", interval))
-
-    -- 釣り中なら先に止める
+-- 釣り中/キャスト中なら停止し FSM を AT_SPOT に戻す
+local function interrupt_fishing_for_chore(reason)
     if _state == STATE.FISHING or cond(COND.fishing) or cond(COND.casting) then
-        log("  修理前: 釣り/キャストを停止")
+        log("  " .. reason .. ": 釣り/キャスト停止")
         yield("/ahoff")
         wait(0.3)
         for i = 1, 3 do
@@ -616,37 +631,178 @@ local function try_repair_gear()
         end
         set_state(STATE.AT_SPOT)
     end
+end
+
+local function try_repair_gear()
+    if not cfg.auto_repair then return end
+    local threshold = cfg.repair_threshold_pct or 20
+
+    -- API 可用性確認 (無ければサイレントスキップ)
+    if safe_get("Inventory.GetItemsInNeedOfRepairs") == nil then
+        log("  修理API (Inventory.GetItemsInNeedOfRepairs) が利用不可 → スキップ")
+        return
+    end
+
+    local need, count = needs_repair(threshold)
+    if not need then
+        log(string.format("  装備耐久 OK (閾値 %d%% 未満 0 件)", threshold))
+        return
+    end
+    log(string.format("★ 修理対象 %d 件 (閾値 %d%%)", count, threshold))
+
+    -- Dark Matter 確認
+    local dm = item_count(DARK_MATTER_ITEM_ID)
+    if dm <= 0 then
+        log("  Dark Matter Cluster (33916) が 0 → 自己修理不可 (手動修理してください)")
+        return
+    end
+    log(string.format("  Dark Matter=%d", dm))
+
+    interrupt_fishing_for_chore("修理前")
     ensure_dismounted("修理前")
     close_stale_addons()
 
-    yield('/ac 自己修理')
-    local opened = wait_until(function()
-        return addon_visible("Repair") == true
-    end, 5)
-    if not opened then
-        log("  Repair ウィンドウ開かず (自己修理アクション未習得 or Dark Matter 無)")
+    -- GA 6 = 自己修理
+    local exec_ga = safe_get("Actions.ExecuteGeneralAction")
+    if exec_ga then
+        pcall(exec_ga, 6)
+    else
+        yield('/ac 自己修理')
+    end
+
+    -- Repair ウィンドウ待機
+    if not wait_until(function() return addon_visible("Repair") == true end, 5) then
+        log("  警告: Repair ウィンドウが開かなかった")
         return
     end
-    wait(0.5)
+    wait(0.3)
 
-    -- 「まとめて修理」を押す。全部耐久MAXなら Yes/No が出ずにボタン自体が無反応。
-    yield('/callback Repair true 0')
-    if wait_until(function() return addon_visible("SelectYesno") == true end, 2) then
-        log("  修理対象あり → Yes")
-        yield('/callback SelectYesno true 0')  -- Yes
-        -- 修理キャスト完了待ち
-        wait_until(function() return not cond(COND.casting) end, 20)
-        wait(1.0)
-        log("  修理完了")
-    else
-        log("  修理不要 (耐久OK)")
+    -- 閾値未満がなくなるまで繰り返す
+    local safety = 0
+    while safety < 30 do
+        safety = safety + 1
+
+        -- 確認ダイアログがあれば Yes
+        if addon_visible("SelectYesno") == true then
+            yield('/callback SelectYesno true 0')
+            wait(0.5)
+        end
+
+        -- 修理アクション中は待機
+        if cond(COND.occupied_mr) or cond(COND.casting) then
+            wait_until(function()
+                return not cond(COND.occupied_mr) and not cond(COND.casting)
+            end, 20)
+            wait(0.5)
+        end
+
+        -- 残り対象チェック
+        local still_need, still_count = needs_repair(threshold)
+        if not still_need then
+            log("  修理完了 (閾値以下なし)")
+            if addon_visible("Repair") == true then
+                yield('/callback Repair true -1')
+                wait(0.3)
+            end
+            break
+        end
+
+        -- まだ残っているなら再度「まとめて修理」
+        if addon_visible("Repair") == true then
+            log(string.format("  iter=%d 残 %d 件 → まとめて修理", safety, still_count))
+            yield('/callback Repair true 0')
+            wait(0.5)
+        else
+            -- ウィンドウが閉じていたら再度アクション発動
+            log("  Repair ウィンドウが閉じた → 再発動")
+            if exec_ga then pcall(exec_ga, 6) else yield('/ac 自己修理') end
+            wait_until(function() return addon_visible("Repair") == true end, 5)
+            wait(0.3)
+        end
     end
 
-    -- Repair ウィンドウを閉じる
+    -- 最終クローズ
     if addon_visible("Repair") == true then
         yield('/callback Repair true -1')
         wait(0.3)
     end
+end
+
+local function try_extract_materia()
+    if not cfg.extract_materia then return end
+    if safe_get("Inventory.GetSpiritbondedItems") == nil then
+        log("  マテリア抽出API (Inventory.GetSpiritbondedItems) が利用不可 → スキップ")
+        return
+    end
+
+    local cnt = spiritbonded_count()
+    if cnt <= 0 then
+        log("  精霊化装備なし → マテリア抽出スキップ")
+        return
+    end
+    if free_slots() <= 1 then
+        log("  インベ空き不足 → マテリア抽出スキップ")
+        return
+    end
+    log(string.format("★ マテリア抽出 対象=%d 空き=%d", cnt, free_slots()))
+
+    interrupt_fishing_for_chore("マテリア抽出前")
+    ensure_dismounted("マテリア抽出前")
+    close_stale_addons()
+
+    local exec_ga = safe_get("Actions.ExecuteGeneralAction")
+    local safety = 0
+    while safety < 50 do
+        safety = safety + 1
+
+        -- 抽出中コンディション待機
+        if cond(COND.occupied_mr) or cond(COND.casting) then
+            wait_until(function()
+                return not cond(COND.occupied_mr) and not cond(COND.casting)
+            end, 20)
+            wait(0.5)
+        end
+
+        -- 終了条件
+        if spiritbonded_count() <= 0 or free_slots() <= 1 then
+            log(string.format("  マテリア抽出終了 残=%d 空き=%d",
+                spiritbonded_count(), free_slots()))
+            if addon_visible("Materialize") == true then
+                yield('/callback Materialize true -1')
+                wait(0.3)
+            end
+            break
+        end
+
+        -- Materialize ウィンドウが無ければ GA 14 で開く
+        if addon_visible("Materialize") ~= true then
+            log("  マテリア精製アクション発動 (GA 14)")
+            if exec_ga then pcall(exec_ga, 14) else yield('/ac マテリア精製') end
+            if not wait_until(function() return addon_visible("Materialize") == true end, 5) then
+                log("  警告: Materialize ウィンドウが開かなかった")
+                break
+            end
+            wait(0.3)
+        end
+
+        -- 確認ダイアログが出ていれば Yes
+        if addon_visible("MaterializeDialog") == true then
+            log("  MaterializeDialog → 確定")
+            yield('/callback MaterializeDialog true 0')
+            wait(0.5)
+        else
+            -- リスト先頭を選択して抽出
+            log(string.format("  iter=%d 先頭装備を抽出", safety))
+            yield('/callback Materialize true 2 0')
+            wait(1.0)
+        end
+    end
+
+    if addon_visible("Materialize") == true then
+        yield('/callback Materialize true -1')
+        wait(0.3)
+    end
+    log("  マテリア抽出完了")
 end
 
 local function cast()
@@ -912,6 +1068,8 @@ local function dump_api()
         "Inventory.GetItemCount", "Inventory.GetFreeInventorySlots",
         "Inventory.GetHQItemCount", "Inventory.GetCollectableItemCount",
         "Inventory.UseItem",
+        "Inventory.GetItemsInNeedOfRepairs",
+        "Inventory.GetSpiritbondedItems",
         "IPC.Lifestream.ExecuteCommand", "IPC.vnavmesh.PathfindAndMoveTo",
         "Actions.ExecuteGeneralAction", "Config.Get",
     }
@@ -946,7 +1104,7 @@ function PTF.run(opts)
     cfg.debug              = cfg.debug ~= false
     cfg.auto_repair        = cfg.auto_repair ~= false     -- 既定 true
     cfg.repair_threshold_pct = cfg.repair_threshold_pct or 20
-    cfg.repair_interval_sec = cfg.repair_interval_sec or 1800  -- 30 分
+    cfg.extract_materia    = cfg.extract_materia ~= false  -- 既定 true
     -- 共通 pointToFace (すべてのスポットで同じ方角を向かせる場合)
     -- cfg.face = {x=..., y=..., z=...} が渡されれば採用、なければ個別 spot.face のみ
     cfg.face               = cfg.face
@@ -995,8 +1153,11 @@ function PTF.run(opts)
     while item_count(SAND_ITEM_ID) < cfg.target do
         goto_spot(cfg.spots[idx])
 
-        -- 装備耐久チェック (定期的に Repair ウィンドウを試し、修理要なら実行)
+        -- 装備耐久チェック (API で閾値未満件数を確認して修理)
         try_repair_gear()
+
+        -- 精霊化装備のマテリア抽出
+        try_extract_materia()
 
         -- 釣り開始前のインベントリ空きチェック
         local free = free_slots()

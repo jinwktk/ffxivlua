@@ -39,11 +39,13 @@ SND のマクロ画面 → **Macro Dependencies** → **Add New Dependency** →
 - 3点の `spot1_x/y/z` 〜 `spot3_x/y/z`
 - `use_flight` / `needs_collectable` / `debug`
 - `auto_repair`(true) / `repair_threshold_pct`(20) — 自己修理の有効化と閾値(%)
+- `extract_materia`(true) — 錬精度 100% 装備の自動マテリア抽出
 
 ### 4. 実行
 - 漁師でログイン、インベントリを空ける
 - AutoHook で指定プリセットを事前作成
-- 自己修理を有効にする場合は **自己修理アクション習得 + Dark Matter を携帯**
+- 自己修理を有効にする場合は **自己修理アクション (GA 6) 習得 + Dark Matter Cluster (33916) を携帯**
+- マテリア抽出を有効にする場合は **マテリア精製アクション (GA 14) を習得済**
 - SND でマクロを実行
 
 ## バージョン識別
