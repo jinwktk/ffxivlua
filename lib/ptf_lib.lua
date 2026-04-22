@@ -9,8 +9,8 @@
 ------------------------------------------------------------------
 -- バージョン (git pre-commit hook で自動置換) --------------------
 ------------------------------------------------------------------
-local LIB_VERSION = "0baebc5"                -- AUTO-UPDATED BY HOOK
-local LIB_BUILD   = "2026-04-22 20:22"                -- AUTO-UPDATED BY HOOK
+local LIB_VERSION = "5a5b9e8"                -- AUTO-UPDATED BY HOOK
+local LIB_BUILD   = "2026-04-22 20:28"                -- AUTO-UPDATED BY HOOK
 
 ------------------------------------------------------------------
 -- 固定 ItemId ----------------------------------------------------
@@ -583,60 +583,24 @@ local function close_stale_addons()
 end
 
 ------------------------------------------------------------------
--- 装備耐久チェック & 自己修理 -----------------------------------
+-- 自己修理 (時間ベース throttle) --------------------------------
 ------------------------------------------------------------------
--- 装備耐久の最低値を % (0-100) で取得。取得不能時は nil。
--- SND のバージョンにより API 名が異なるため複数試す。
-local function min_equipment_condition()
-    -- Pattern A: Inventory.GetEquippedItem(slot).Condition  (0-30000 の raw 値)
-    local get_eq = safe_get("Inventory.GetEquippedItem")
-    if get_eq then
-        local min_pct = 101.0
-        local any = false
-        -- 主手/副手/防具: 0..12 を総当たり (0:MainHand,1:OffHand,2:Head,3:Body,4:Hands,5:Waist(廃止),6:Legs,7:Feet,8..12:アクセ)
-        for slot = 0, 12 do
-            local ok, item = pcall(get_eq, slot)
-            if ok and item ~= nil then
-                local c = safe_index(item, "Condition")
-                if c == nil then c = safe_index(item, "Durability") end
-                if c ~= nil then
-                    local raw = tonumber(c)
-                    if raw then
-                        local pct
-                        if raw > 100 then pct = raw / 300.0 else pct = raw end
-                        if pct < min_pct then min_pct = pct end
-                        any = true
-                    end
-                end
-            end
-        end
-        if any then return min_pct end
-    end
-    -- Pattern B: Player オブジェクト側 (未実装 SND もある)
-    local lp = player_obj()
-    if lp then
-        local eq = safe_index(lp, "EquippedItems") or safe_index(lp, "Equipment")
-        if type(eq) == "table" or type(eq) == "userdata" then
-            -- 省略 (Pattern A で取れない環境は手動運用)
-        end
-    end
-    return nil
-end
+-- 耐久API が無い環境向け。定期的に Repair ウィンドウを開き、
+-- 「Yes/No」ダイアログの出現を修理要否の判定に使う。
+local _last_repair_attempt = 0   -- os.time() の値
 
--- 自己修理を試みる。threshold_pct を下回ったら実行。
--- 釣り中でも安全に呼ぶために内部で状態をクリアする。
-local function try_repair_gear(threshold_pct)
+local function try_repair_gear()
     if not cfg.auto_repair then return end
-    threshold_pct = threshold_pct or cfg.repair_threshold_pct or 20
-    local min_c = min_equipment_condition()
-    if min_c == nil then
-        log("  修理: 耐久API取得不可 → スキップ (初回のみ警告)")
+
+    local now = os.time()
+    local interval = cfg.repair_interval_sec or 1800   -- 30 分
+    if (now - _last_repair_attempt) < interval then
+        -- まだ前回から短時間 → スキップ
         return
     end
-    log(string.format("  装備耐久 最低=%.0f%% (閾値 %d%%)", min_c, threshold_pct))
-    if min_c > threshold_pct then return end
+    _last_repair_attempt = now
 
-    log(string.format("  ★ 自己修理実行 (耐久 %.0f%% ≤ %d%%)", min_c, threshold_pct))
+    log(string.format("★ 定期修理トライ (間隔 %d 秒)", interval))
 
     -- 釣り中なら先に止める
     if _state == STATE.FISHING or cond(COND.fishing) or cond(COND.casting) then
@@ -660,30 +624,29 @@ local function try_repair_gear(threshold_pct)
         return addon_visible("Repair") == true
     end, 5)
     if not opened then
-        log("  警告: Repair ウィンドウが開かなかった")
-        log("  (自己修理アクションを習得しているか、Dark Matter があるか確認)")
+        log("  Repair ウィンドウ開かず (自己修理アクション未習得 or Dark Matter 無)")
         return
     end
     wait(0.5)
 
-    -- Repair ウィンドウの「まとめて修理」ボタン
+    -- 「まとめて修理」を押す。全部耐久MAXなら Yes/No が出ずにボタン自体が無反応。
     yield('/callback Repair true 0')
-    if wait_until(function() return addon_visible("SelectYesno") == true end, 3) then
-        wait(0.3)
+    if wait_until(function() return addon_visible("SelectYesno") == true end, 2) then
+        log("  修理対象あり → Yes")
         yield('/callback SelectYesno true 0')  -- Yes
+        -- 修理キャスト完了待ち
+        wait_until(function() return not cond(COND.casting) end, 20)
+        wait(1.0)
+        log("  修理完了")
+    else
+        log("  修理不要 (耐久OK)")
     end
-    -- 修理アニメーション待ち
-    wait_until(function() return not cond(COND.casting) end, 15)
-    wait(1.0)
 
     -- Repair ウィンドウを閉じる
     if addon_visible("Repair") == true then
         yield('/callback Repair true -1')
         wait(0.3)
     end
-
-    local new_min = min_equipment_condition()
-    log(string.format("  修理後 最低耐久=%s%%", new_min and string.format("%.0f", new_min) or "?"))
 end
 
 local function cast()
@@ -983,6 +946,7 @@ function PTF.run(opts)
     cfg.debug              = cfg.debug ~= false
     cfg.auto_repair        = cfg.auto_repair ~= false     -- 既定 true
     cfg.repair_threshold_pct = cfg.repair_threshold_pct or 20
+    cfg.repair_interval_sec = cfg.repair_interval_sec or 1800  -- 30 分
     -- 共通 pointToFace (すべてのスポットで同じ方角を向かせる場合)
     -- cfg.face = {x=..., y=..., z=...} が渡されれば採用、なければ個別 spot.face のみ
     cfg.face               = cfg.face
@@ -1031,8 +995,8 @@ function PTF.run(opts)
     while item_count(SAND_ITEM_ID) < cfg.target do
         goto_spot(cfg.spots[idx])
 
-        -- 装備耐久チェック (閾値以下なら自己修理)
-        try_repair_gear(cfg.repair_threshold_pct)
+        -- 装備耐久チェック (定期的に Repair ウィンドウを試し、修理要なら実行)
+        try_repair_gear()
 
         -- 釣り開始前のインベントリ空きチェック
         local free = free_slots()
